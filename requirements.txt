@@ -1,2 +1,0 @@
-pandas
-xlsxwriter   # needed for --format xlsx / pretty XLSX export
