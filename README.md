@@ -17,7 +17,6 @@ Bash wrapper that sets up a local Python virtual environment and runs `suite_err
 .
 ├─ suite_summary.sh            # the bash wrapper
 ├─ suite_error_summary.py      # the Python script it calls
-├─ requirements.txt            # deps (pandas, xlsxwriter)
 └─ logs.csv                    # your input data (example)
 ```
 
