@@ -1,7 +1,3 @@
-Here’s a clean, GitHub-friendly **README.md** you can drop into the repo:
-
----
-
 # Suite Error Summary
 
 Bash wrapper that sets up a local Python virtual environment and runs `suite_error_summary.py` on a CSV of test runs to produce a per-suite **Top-N error summary** (CSV and/or XLSX).
@@ -11,6 +7,7 @@ Bash wrapper that sets up a local Python virtual environment and runs `suite_err
 * **Bash** (macOS/Linux; on Windows use **Git Bash** or **WSL**)
 * **Python 3** on PATH (`python3`, `python`, or Windows `py`)
 * Internet on first run (to create `.venv` and install deps)
+* Install xlsxwriter (if you want the XLSX File)
 
 > The script auto-creates and uses a local `.venv` next to itself—no global installs needed.
 
