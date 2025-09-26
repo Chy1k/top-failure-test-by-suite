@@ -1,71 +1,197 @@
-# Suite Error Summary
+# Suite Error Summary Tool
 
-Bash wrapper that sets up a local Python virtual environment and runs `suite_error_summary.py` on a CSV of test runs to produce a per-suite **Top-N error summary** (CSV and/or XLSX).
+A Python tool that analyzes test execution logs and produces a "Top-N error messages + Other" summary with FAILED/UNSTABLE breakdowns, exported as CSV or nicely formatted XLSX.
 
-## Prerequisites
+## Business Value
 
-* **Bash** (macOS/Linux; on Windows use **Git Bash** or **WSL**)
-* **Python 3** on PATH (`python3`, `python`, or Windows `py`)
-* Internet on first run (to create `.venv` and install deps)
-* Install xlsxwriter (if you want the XLSX File)
+### Accelerated Issue Detection and Resolution
 
-> The script auto-creates and uses a local `.venv` next to itself—no global installs needed.
+This tool transforms raw test execution data into actionable insights, enabling development teams to:
 
-## Files
+- **Rapidly identify critical issues**: Automatically surfaces the most frequent error patterns across test suites, eliminating manual log analysis
+- **Prioritize remediation efforts**: Quantifies error impact by frequency and affected test counts, enabling data-driven decision making
+- **Reduce mean time to resolution (MTTR)**: Consolidated error summaries allow teams to focus on root causes rather than symptoms
+- **Improve release velocity**: Faster issue identification accelerates the feedback loop between development and testing phases
 
-```
-.
-├─ suite_summary.sh            # the bash wrapper
-├─ suite_error_summary.py      # the Python script it calls
-└─ logs.csv                    # your input data (example)
-```
+### Key Benefits
+
+- **Efficiency Gains**: Reduces manual log analysis time from hours to minutes
+- **Pattern Recognition**: Normalized error grouping reveals underlying issues that might be missed when examining individual test failures
+- **Quality Metrics**: Provides quantifiable data on test suite stability and error distribution patterns
+- **Stakeholder Reporting**: Professional XLSX output suitable for management dashboards and quality reports
+
+### Use Cases
+
+- **Daily Test Result Analysis**: Quickly identify new issues introduced in recent builds
+- **Release Readiness Assessment**: Evaluate overall test suite health before deployment
+- **Technical Debt Prioritization**: Focus engineering efforts on the most impactful error patterns
+- **Quality Trend Analysis**: Track error patterns over time to measure improvement initiatives
 
 ## Quick Start
 
+### Prerequisites
+
+- Python 3.7+ installed on your system
+- CSV file with test execution data
+
+### Installation
+
+1. **Clone or download this repository**
+   ```bash
+   git clone <repository-url>
+   cd bigdata_test
+   ```
+
+2. **Install Python dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Running the Tool
+
+#### Option 1: Using the Bash Wrapper (Recommended)
+
+**Basic usage:**
+```bash
+./suite_summary.sh your_logs.csv
+```
+
+**With custom output directory:**
+```bash
+./suite_summary.sh your_logs.csv my_output_folder
+```
+
+**With additional options:**
+```bash
+EXTRA_FLAGS="--format both --pretty --top-n 10" ./suite_summary.sh your_logs.csv
+```
+
+#### Option 2: Direct Python Execution
+
+```bash
+python suite_error_summary.py \
+  --input logs.csv \
+  --output-dir out_logs \
+  --message-cols "FAILURE MESSAGE 1,FAILURE MESSAGE 2" \
+  --suite-col TEST_SUITE \
+  --status-col "EXECUTION RESULT" \
+  --pretty \
+  --format xlsx
+```
+
+## Input Requirements
+
+Your CSV file must contain:
+
+- **Suite column**: Groups tests by test suite (e.g., `TEST_SUITE`)
+- **Status column**: Test execution status (e.g., `EXECUTION RESULT`)
+- **Message columns**: Error/failure messages (e.g., `FAILURE MESSAGE 1`, `FAILURE MESSAGE 2`)
+
+**Supported status values**: `FAILED`, `UNSTABLE`
+
+## Configuration Options
+
+### Environment Variables (for bash wrapper)
+
+```bash
+export MESSAGE_COLS="FAILURE MESSAGE 1,FAILURE MESSAGE 2"  # Message columns to analyze
+export SUITE_COL="TEST_SUITE"                              # Suite grouping column
+export STATUS_COL="EXECUTION RESULT"                       # Status column
+export TOPN=5                                              # Number of top messages per suite
+export GROUP_BY=norm                                       # norm (normalized) or raw
+export EXTRA_FLAGS="--pretty --format xlsx"               # Additional options
+```
+
+### Command Line Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--input` | Input CSV file path | Required |
+| `--output-dir` | Output directory | Required |
+| `--message-cols` | Comma-separated message columns | Required |
+| `--suite-col` | Suite grouping column | Required |
+| `--status-col` | Status column name | `"EXECUTION RESULT"` |
+| `--top-n` | Number of top messages per suite | `5` |
+| `--group-by` | Grouping method: `norm` or `raw` | `norm` |
+| `--format` | Output format: `csv`, `xlsx`, `both` | `csv` |
+| `--pretty` | Use human-friendly column names | `false` |
+| `--hash-signature` | Hash messages for privacy | `false` |
+| `--truncate-len` | Trim long messages to N chars | `0` (disabled) |
+| `--no-colors` | Disable XLSX colors | `false` |
+
+## Output Files
+
+The tool generates:
+
+- **CSV**: `suite_error_summary.csv` - Raw data format
+- **XLSX**: `suite_error_summary.xlsx` - Formatted spreadsheet with:
+  - Multi-level headers
+  - Frozen panes and filters
+  - Proper column widths
+  - Conditional formatting (unless `--no-colors`)
+- **Log**: `run.log` - Execution log
+
+### Example Results
+
+**XLSX File**
+<img width="1854" height="714" alt="image" src="https://github.com/user-attachments/assets/f2b0c4a0-b284-464a-b77d-a86299aebde6" />
+
+**CSV File**
+<img width="995" height="176" alt="image" src="https://github.com/user-attachments/assets/fb5b4577-52f7-494c-a1ee-9fde4139b8ec" />
+
+## Examples
+
+### Basic Analysis
+```bash
+./suite_summary.sh test_results.csv
+```
+
+### Advanced Configuration
+```bash
+# Top 10 messages, both formats, pretty headers
+EXTRA_FLAGS="--top-n 10 --format both --pretty" ./suite_summary.sh test_results.csv analysis_output
+```
+
+### Privacy Mode (Hash Messages)
+```bash
+python suite_error_summary.py \
+  --input sensitive_logs.csv \
+  --output-dir secure_output \
+  --message-cols "ERROR_MSG" \
+  --suite-col "SUITE_NAME" \
+  --hash-signature \
+  --format csv
+```
+
+## Troubleshooting
+
+### Python Not Found
+**Windows**: Try `python`, `py`, or install from [python.org](https://python.org)
+**Linux/Mac**: Try `python3` or use your package manager
+
+### Missing Dependencies
+```bash
+pip install pandas xlsxwriter
+```
+
+### Permission Errors (Git Bash/Windows)
 ```bash
 chmod +x suite_summary.sh
-./suite_summary.sh path/to/logs.csv
-# or choose an output dir:
-./suite_summary.sh path/to/logs.csv my_reports
 ```
 
-### Recommended example
+### Large Files
+For very large CSV files, consider:
+- Increase system memory
+- Use `--format csv` only (faster than XLSX)
+- Filter data beforehand
 
-Generate **both CSV and XLSX**, with pretty headers and no colors:
-
-```bash
-EXTRA_FLAGS="--format both --pretty --no-colors" ./suite_summary.sh ./logs.csv
-```
-
-## Customization (env vars)
-
-Override defaults by prefixing the command:
-
-```bash
-MESSAGE_COLS="FAILURE MESSAGE 1,FAILURE MESSAGE 2" \
-SUITE_COL="TEST_SUITE" \
-STATUS_COL="EXECUTION RESULT" \
-STATUS_INCLUDE="FAILED,UNSTABLE" \
-TOPN=10 \
-GROUP_BY="norm" \
-SEP="," \
-ENCODING="utf-8" \
-EXTRA_FLAGS="--format both --pretty --no-colors" \
-./suite_summary.sh ./logs.csv
-```
-
-**Common flags passed via `EXTRA_FLAGS` to the Python script:**
-
-* `--format csv|xlsx|both`
-* `--pretty`
-* `--truncate-len N`
-* `--no-colors` (for XLSX)
-
-## Output
+## File Structure
 
 ```
-out_<csv_basename>/
-  ├─ suite_error_summary.csv
-  ├─ suite_error_summary.xlsx     # if format includes xlsx and xlsxwriter is installed
-  └─ run.log                      # full command output
+.
+├── suite_summary.sh            # Bash wrapper script
+├── suite_error_summary.py      # Main Python analysis tool
+├── requirements.txt            # Python dependencies
+├── logs.csv                    # Example input data
+└── README.md                   # This file
 ```
