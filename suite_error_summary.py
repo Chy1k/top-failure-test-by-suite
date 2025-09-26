@@ -7,10 +7,18 @@ Reads a CSV of test executions, groups error messages per suite, and produces a
 a nicely formatted XLSX.
 
 """
-import argparse, re, hashlib, csv
+import argparse
+import csv
+import hashlib
+import re
 from pathlib import Path
 import pandas as pd
 from argparse import Namespace
+
+# ---------------- Constants ----------------
+VALID_STATUSES = ["FAILED", "UNSTABLE"]
+DEFAULT_TOP_N = 5
+DEFAULT_ENCODING = "utf-8"
 
 # ---------------- Normalization ----------------
 # Precompiled regexes used to mask volatile bits in messages so semantically
@@ -73,11 +81,11 @@ def hsig(t: str, algo: str = "sha1") -> str:
     "Hash when you must share counts, not content."
     """
     h = getattr(hashlib, algo, hashlib.sha1)()
-    h.update(t.encode("utf-8"))
+    h.update(t.encode(DEFAULT_ENCODING))
     return h.hexdigest()
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """
     Define and parse the command-line interface.
 
@@ -98,14 +106,12 @@ def parse_args():
     ap.add_argument("--message-cols", required=True, help='e.g. "FAILURE MESSAGE 1,FAILURE MESSAGE 2"')
     ap.add_argument("--suite-col", required=True, help='e.g. "TEST_SUITE"')
     ap.add_argument("--status-col", default="EXECUTION RESULT")
-    ap.add_argument("--status-include", default="FAILED,UNSTABLE")
     ap.add_argument("--group-by", choices=["norm", "raw"], default="norm")
     ap.add_argument("--hash-signature", action="store_true")
     ap.add_argument("--hash-algo", default="sha1")
     ap.add_argument("--sep", default=",")
     ap.add_argument("--encoding", default=None)
-    ap.add_argument("--top-n", type=int, default=5)
-    ap.add_argument("--include-overall", action="store_true")  # kept for future use
+    ap.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
     # presentation
     ap.add_argument("--pretty", action="store_true", help="Nicer headers/order")
     ap.add_argument("--truncate-len", type=int, default=0, help="Trim Top-i messages to N chars (0 = none)")
@@ -124,7 +130,7 @@ def out_name(fmt: str) -> str:
     return "suite_error_summary.xlsx" if fmt == "xlsx" else "suite_error_summary.csv"
 
 
-def write_output(df: pd.DataFrame, path: Path, a):
+def write_output(df: pd.DataFrame, path: Path, a: argparse.Namespace) -> None:
     """
     Write the DataFrame to CSV or XLSX.
 
@@ -213,7 +219,7 @@ def write_output(df: pd.DataFrame, path: Path, a):
         print("xlsxwriter not installed; wrote CSV instead:", alt)
 
 
-def main():
+def main() -> None:
     """
     Orchestrates the full ETL:
     1) Read CSV and validate columns.
@@ -228,11 +234,19 @@ def main():
     a = parse_args()
 
     # Create output dir early so any logs/sidecars could be written here.
-    out = Path(a.output_dir); out.mkdir(parents=True, exist_ok=True)
+    out = Path(a.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
 
-    # Robust read: keep header row, don't infer mixed types aggressively, and skip bad lines.
-    df = pd.read_csv(a.input, header=0, low_memory=False, on_bad_lines="skip",
-                     sep=a.sep, encoding=a.encoding)
+    # Robust read with error handling
+    try:
+        df = pd.read_csv(a.input, header=0, low_memory=False, on_bad_lines="skip",
+                         sep=a.sep, encoding=a.encoding)
+    except FileNotFoundError:
+        raise SystemExit(f"Input file not found: {a.input}")
+    except pd.errors.EmptyDataError:
+        raise SystemExit(f"Input file is empty: {a.input}")
+    except Exception as e:
+        raise SystemExit(f"Error reading input file: {e}")
 
     # Collect requested message columns.
     msg_cols = [c.strip() for c in a.message_cols.split(",") if c.strip()]
@@ -270,14 +284,10 @@ def main():
     status_totals = (
         df.groupby([a.suite_col, a.status_col]).size()
           .unstack(fill_value=0)
+          .reindex(columns=VALID_STATUSES, fill_value=0)
           .reset_index()
+          .rename(columns={"FAILED": "failed_tests_total", "UNSTABLE": "unstable_tests_total"})
     )
-    # Make sure both columns exist even if absent in data.
-    for col in ["FAILED", "UNSTABLE"]:
-        if col not in status_totals.columns:
-            status_totals[col] = 0
-    status_totals = status_totals.rename(columns={"FAILED": "failed_tests_total",
-                                                  "UNSTABLE": "unstable_tests_total"})
 
     # ---------------- Long form of messages ----------------
     # One row per (original row, message column) that has non-empty content.
@@ -330,27 +340,34 @@ def main():
 
     # ---------------- Build the wide Top-N table per suite ----------------
     rows = []
+    status_totals_indexed = status_totals.set_index(a.suite_col)
     for suite, g in grp.groupby(a.suite_col, sort=False):
         # Rank messages by frequency within the suite.
         g = g.sort_values("events", ascending=False)
         row = {a.suite_col: suite, "total_messages": g["events"].sum()}
 
         # Fetch per-suite status totals to compute residual "Other".
-        st = status_totals[status_totals[a.suite_col] == suite]
-        row["failed_tests_total"]   = st.iloc[0]["failed_tests_total"] if not st.empty else 0
-        row["unstable_tests_total"] = st.iloc[0]["unstable_tests_total"] if not st.empty else 0
+        row["failed_tests_total"]   = status_totals_indexed.loc[suite, "failed_tests_total"] if suite in status_totals_indexed.index else 0
+        row["unstable_tests_total"] = status_totals_indexed.loc[suite, "unstable_tests_total"] if suite in status_totals_indexed.index else 0
 
         # Fill Top-N columns.
         sum_e = sum_f = sum_u = 0
-        for i, (_, r) in enumerate(g.head(a.top_n).iterrows(), start=1):
-            msg = r["example_message"]
-            # Optional readability: trim very long exemplars.
-            if a.truncate_len and isinstance(msg, str) and len(msg) > a.truncate_len:
-                msg = msg[:a.truncate_len - 1] + "…"
-            row[f"top{i}_message"]        = msg
-            row[f"top{i}_events"]         = r["events"];         sum_e += r["events"]
-            row[f"top{i}_failed_tests"]   = r["failed_tests"];   sum_f += r["failed_tests"]
-            row[f"top{i}_unstable_tests"] = r["unstable_tests"]; sum_u += r["unstable_tests"]
+        for i in range(1, a.top_n + 1):
+            if i <= len(g):
+                msg = g.iloc[i - 1]["example_message"]
+                # Optional readability: trim very long exemplars.
+                if a.truncate_len and isinstance(msg, str) and len(msg) > a.truncate_len:
+                    msg = msg[:a.truncate_len - 1] + "…"
+                row[f"top{i}_message"]        = msg
+                row[f"top{i}_events"]         = g.iloc[i - 1]["events"];         sum_e += g.iloc[i - 1]["events"]
+                row[f"top{i}_failed_tests"]   = g.iloc[i - 1]["failed_tests"];   sum_f += g.iloc[i - 1]["failed_tests"]
+                row[f"top{i}_unstable_tests"] = g.iloc[i - 1]["unstable_tests"]; sum_u += g.iloc[i - 1]["unstable_tests"]
+            else:
+                # Fill empty slots for suites with fewer than top_n messages
+                row[f"top{i}_message"]        = ""
+                row[f"top{i}_events"]         = 0
+                row[f"top{i}_failed_tests"]   = 0
+                row[f"top{i}_unstable_tests"] = 0
 
         # Residual bucket: long tail not in Top-N.
         row["other_events"]          = max(0, row["total_messages"] - sum_e)

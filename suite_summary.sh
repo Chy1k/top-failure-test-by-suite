@@ -5,12 +5,11 @@ set -Eeuo pipefail
 MESSAGE_COLS=${MESSAGE_COLS:-"FAILURE MESSAGE 1,FAILURE MESSAGE 2"}
 SUITE_COL=${SUITE_COL:-"TEST_SUITE"}
 STATUS_COL=${STATUS_COL:-"EXECUTION RESULT"}
-STATUS_INCLUDE=${STATUS_INCLUDE:-"FAILED,UNSTABLE"}
 TOPN=${TOPN:-5}
 GROUP_BY=${GROUP_BY:-norm}
 SEP=${SEP:-","}
 ENCODING=${ENCODING:-"utf-8"}
-EXTRA_FLAGS=${EXTRA_FLAGS:-"--format both --pretty --format xlsx --no-colors"}   # no truncate flag
+EXTRA_FLAGS=${EXTRA_FLAGS:-"--format both --pretty --format xlsx --no-colors"}
 
 usage(){ echo "Usage: $0 <logs.csv> [out_dir]"; exit 1; }
 [[ $# -lt 1 ]] && usage
@@ -23,16 +22,17 @@ PY_SCRIPT="$SCRIPT_DIR/suite_error_summary.py"
 [[ -f "$PY_SCRIPT" ]] || { echo "Not found: $PY_SCRIPT" >&2; exit 2; }
 [[ -f "$CSV" ]] || { echo "CSV not found: $CSV" >&2; exit 2; }
 
-# Resolve Python (prefer local venv; create if missing)
-if [[ -x "$SCRIPT_DIR/.venv/Scripts/python.exe" ]]; then PY="$SCRIPT_DIR/.venv/Scripts/python.exe"
-elif [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then PY="$SCRIPT_DIR/.venv/bin/python"
+# Use system Python (users should install requirements.txt dependencies)
+if command -v python >/dev/null 2>&1; then
+    PY="python"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="python3"
+elif command -v py >/dev/null 2>&1; then
+    PY="py"
 else
-  if command -v py >/dev/null 2>&1; then py -3 -m venv "$SCRIPT_DIR/.venv"; PY="$SCRIPT_DIR/.venv/Scripts/python.exe"
-  elif command -v python3 >/dev/null 2>&1; then python3 -m venv "$SCRIPT_DIR/.venv"; PY="$SCRIPT_DIR/.venv/bin/python"
-  else python -m venv "$SCRIPT_DIR/.venv"; PY="$SCRIPT_DIR/.venv/bin/python"; fi
-  "$PY" -m pip install --upgrade pip -q
-  if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then "$PY" -m pip install -r "$SCRIPT_DIR/requirements.txt" -q
-  else "$PY" -m pip install pandas -q; fi
+    echo "Error: Python not found. Please install Python 3." >&2
+    echo "Try: python --version, python3 --version, or py --version" >&2
+    exit 2
 fi
 
 # Convert paths on Git Bash/Windows
@@ -49,7 +49,6 @@ set -x
   --message-cols "$MESSAGE_COLS" \
   --suite-col "$SUITE_COL" \
   --status-col "$STATUS_COL" \
-  --status-include "$STATUS_INCLUDE" \
   --group-by "$GROUP_BY" \
   --top-n "$TOPN" \
   --hash-signature \
@@ -59,4 +58,4 @@ set -x
   2>&1 | tee "$RUNLOG"
 set +x
 
-Done "✔ Output: $OUT/suite_error_summary.csv"
+echo "✔ Output: $OUT/suite_error_summary.csv"
