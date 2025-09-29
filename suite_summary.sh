@@ -42,20 +42,27 @@ case "$OSTYPE" in msys*|cygwin*) command -v cygpath >/dev/null 2>&1 && {
 
 mkdir -p "$OUT"
 RUNLOG="$OUT/run.log"
+
+# Build command with smart defaults
+CMD_ARGS=(
+  --input "$CSV_ARG"
+  --output-dir "$OUT_ARG"
+  --message-cols "$MESSAGE_COLS"
+  --group-by "$GROUP_BY"
+  --top-n "$TOPN"
+  --sep "$SEP"
+  --encoding "$ENCODING"
+)
+
+# Only add suite/status columns if they differ from defaults
+[[ "$SUITE_COL" != "TEST_SUITE" ]] && CMD_ARGS+=(--suite-col "$SUITE_COL")
+[[ "$STATUS_COL" != "EXECUTION RESULT" ]] && CMD_ARGS+=(--status-col "$STATUS_COL")
+
 set -x
-"$PY" "$PY_SCRIPT" \
-  --input "$CSV_ARG" \
-  --output-dir "$OUT_ARG" \
-  --message-cols "$MESSAGE_COLS" \
-  --suite-col "$SUITE_COL" \
-  --status-col "$STATUS_COL" \
-  --group-by "$GROUP_BY" \
-  --top-n "$TOPN" \
-  --hash-signature \
-  --sep "$SEP" \
-  --encoding "$ENCODING" \
-  $EXTRA_FLAGS \
-  2>&1 | tee "$RUNLOG"
+"$PY" "$PY_SCRIPT" "${CMD_ARGS[@]}" $EXTRA_FLAGS 2>&1 | tee "$RUNLOG"
 set +x
 
-echo "✔ Output: $OUT/suite_error_summary.csv"
+echo "✔ Success! Generated test failure analysis reports:"
+echo "   📊 CSV Report: $OUT/suite_error_summary.csv"
+echo "   📈 Excel Report: $OUT/suite_error_summary.xlsx"
+echo "   📝 Execution Log: $OUT/run.log"
