@@ -279,20 +279,57 @@ def main() -> None:
         empty = pd.DataFrame(columns=base_cols + top_cols + other_cols)
         return write_output(empty, out / out_name(a.format), a)
 
+    # ---------------- EXPLICIT EXCLUSION OF PASSED TESTS ----------------
+    # STEP 1: Completely remove ALL PASSED tests from the dataset
+    original_count = len(df)
+
+    # Explicitly exclude PASSED tests - multiple checks to be absolutely sure
+    df_no_passed = df[df[a.status_col] != "PASSED"].copy()
+    df_no_inconclusive = df_no_passed[df_no_passed[a.status_col] != "INCONCLUSIVE"].copy()
+
+    # Now filter to ONLY the exact statuses we want
+    df_filtered = df_no_inconclusive[df_no_inconclusive[a.status_col].isin(VALID_STATUSES)].copy()
+    filtered_count = len(df_filtered)
+
+    print(f"ORIGINAL DATA: {original_count} total tests")
+    print(f"REMOVED PASSED TESTS: {len(df[df[a.status_col] == 'PASSED'])} PASSED tests excluded")
+    print(f"REMOVED INCONCLUSIVE: {len(df_no_passed[df_no_passed[a.status_col] == 'INCONCLUSIVE'])} INCONCLUSIVE tests excluded")
+    print(f"FINAL FILTERED DATA: {filtered_count} tests (ONLY FAILED/UNSTABLE)")
+
+    # ABSOLUTE VERIFICATION: Check that ZERO PASSED tests remain
+    passed_remaining = len(df_filtered[df_filtered[a.status_col] == "PASSED"])
+    if passed_remaining > 0:
+        raise SystemExit(f"CRITICAL ERROR: {passed_remaining} PASSED tests still in filtered data!")
+
+    # Verify only valid statuses remain
+    remaining_statuses = set(df_filtered[a.status_col].unique())
+    print(f"CONFIRMED: Only these statuses in filtered data: {sorted(remaining_statuses)}")
+
+    if not remaining_statuses.issubset(set(VALID_STATUSES)):
+        invalid = remaining_statuses - set(VALID_STATUSES)
+        raise SystemExit(f"ERROR: Invalid statuses found: {invalid}")
+
+    if df_filtered.empty:
+        print("No FAILED or UNSTABLE tests found!")
+        empty = pd.DataFrame(columns=base_cols + top_cols + other_cols)
+        return write_output(empty, out / out_name(a.format), a)
+
     # ---------------- Per-suite totals by status ----------------
     # Count tests per suite by status so we can compute "Other <status>" later.
     status_totals = (
-        df.groupby([a.suite_col, a.status_col]).size()
+        df_filtered.groupby([a.suite_col, a.status_col]).size()
           .unstack(fill_value=0)
           .reindex(columns=VALID_STATUSES, fill_value=0)
           .reset_index()
           .rename(columns={"FAILED": "failed_tests_total", "UNSTABLE": "unstable_tests_total"})
     )
 
-    # ---------------- Long form of messages ----------------
-    # One row per (original row, message column) that has non-empty content.
-    df["row_id"] = range(len(df))
-    long = df.melt(
+    # ---------------- PROCESS ONLY MESSAGES FROM FAILED/UNSTABLE TESTS ----------------
+    # Add row IDs for tracking
+    df_filtered["row_id"] = range(len(df_filtered))
+
+    # Convert to long form - ONLY processing pre-filtered FAILED/UNSTABLE tests
+    long = df_filtered.melt(
         id_vars=[a.suite_col, "row_id", a.status_col],
         value_vars=msg_cols,
         var_name="message_source",
@@ -300,6 +337,19 @@ def main() -> None:
     )
     long["message_raw"] = long["message_raw"].astype("string")
     long = long[long["message_raw"].notna() & (long["message_raw"].str.strip() != "")]
+
+    # TRIPLE CHECK: Verify absolutely no PASSED tests in message data
+    if "PASSED" in long[a.status_col].values:
+        raise SystemExit("FATAL ERROR: PASSED tests found in message processing!")
+
+    statuses_in_data = set(long[a.status_col].unique())
+    print(f"MESSAGE PROCESSING: {len(long)} messages from {len(df_filtered)} tests")
+    print(f"ALL MESSAGE SOURCES CONFIRMED: {sorted(statuses_in_data)}")
+    print(f"ZERO PASSED TESTS IN MESSAGES: {'PASSED' not in statuses_in_data}")
+
+    if not statuses_in_data.issubset(set(VALID_STATUSES)):
+        invalid = statuses_in_data - set(VALID_STATUSES)
+        raise SystemExit(f"ERROR: Invalid statuses in message data: {invalid}")
 
     # ---------------- Build signatures ----------------
     # Option 1: normalized key (default) → robust grouping
@@ -347,8 +397,14 @@ def main() -> None:
         row = {a.suite_col: suite, "total_messages": g["events"].sum()}
 
         # Fetch per-suite status totals to compute residual "Other".
-        row["failed_tests_total"]   = status_totals_indexed.loc[suite, "failed_tests_total"] if suite in status_totals_indexed.index else 0
-        row["unstable_tests_total"] = status_totals_indexed.loc[suite, "unstable_tests_total"] if suite in status_totals_indexed.index else 0
+        if suite in status_totals_indexed.index:
+            failed_total = status_totals_indexed.loc[suite, "failed_tests_total"]
+            unstable_total = status_totals_indexed.loc[suite, "unstable_tests_total"]
+        else:
+            failed_total = unstable_total = 0
+
+        row["failed_tests_total"] = failed_total
+        row["unstable_tests_total"] = unstable_total
 
         # Fill Top-N columns.
         sum_e = sum_f = sum_u = 0
