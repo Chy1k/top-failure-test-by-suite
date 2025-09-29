@@ -20,6 +20,14 @@ VALID_STATUSES = ["FAILED", "UNSTABLE"]
 DEFAULT_TOP_N = 5
 DEFAULT_ENCODING = "utf-8"
 
+# Standard CSV column names (always the same format)
+STANDARD_COLUMNS = {
+    'TEST_SUITE': 'TEST_SUITE',
+    'EXECUTION_RESULT': 'EXECUTION RESULT',
+    'FAILURE_MESSAGE_1': 'FAILURE MESSAGE 1',
+    'FAILURE_MESSAGE_2': 'FAILURE MESSAGE 2'
+}
+
 # ---------------- Normalization ----------------
 # Precompiled regexes used to mask volatile bits in messages so semantically
 # identical errors (that differ only by IDs, IPs, etc.) will group together.
@@ -98,27 +106,27 @@ def parse_args() -> argparse.Namespace:
 
     "Make the CLI match the mental model: input → transform → top-N → export."
     """
-    ap = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Suite-level error summary (Top-N with FAILED/UNSTABLE breakdown)"
     )
-    ap.add_argument("--input", required=True)
-    ap.add_argument("--output-dir", required=True)
-    ap.add_argument("--message-cols", required=True, help='e.g. "FAILURE MESSAGE 1,FAILURE MESSAGE 2"')
-    ap.add_argument("--suite-col", required=True, help='e.g. "TEST_SUITE"')
-    ap.add_argument("--status-col", default="EXECUTION RESULT")
-    ap.add_argument("--group-by", choices=["norm", "raw"], default="norm")
-    ap.add_argument("--hash-signature", action="store_true")
-    ap.add_argument("--hash-algo", default="sha1")
-    ap.add_argument("--sep", default=",")
-    ap.add_argument("--encoding", default=None)
-    ap.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--message-cols", required=True, help='e.g. "FAILURE MESSAGE 1,FAILURE MESSAGE 2"')
+    parser.add_argument("--suite-col", default="TEST_SUITE", help='Column name for test suite (default: TEST_SUITE)')
+    parser.add_argument("--status-col", default="EXECUTION RESULT", help='Column name for test status (default: EXECUTION RESULT)')
+    parser.add_argument("--group-by", choices=["norm", "raw"], default="norm")
+    parser.add_argument("--hash-signature", action="store_true")
+    parser.add_argument("--hash-algo", default="sha1")
+    parser.add_argument("--sep", default=",")
+    parser.add_argument("--encoding", default=None)
+    parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
     # presentation
-    ap.add_argument("--pretty", action="store_true", help="Nicer headers/order")
-    ap.add_argument("--truncate-len", type=int, default=0, help="Trim Top-i messages to N chars (0 = none)")
-    ap.add_argument("--format", choices=["csv","xlsx","both"], default="csv")
-    ap.add_argument("--no-colors", action="store_true",
+    parser.add_argument("--pretty", action="store_true", help="Nicer headers/order")
+    parser.add_argument("--truncate-len", type=int, default=0, help="Trim Top-i messages to N chars (0 = none)")
+    parser.add_argument("--format", choices=["csv","xlsx","both"], default="csv")
+    parser.add_argument("--no-colors", action="store_true",
                     help="Disable background/conditional colors in XLSX export")
-    return ap.parse_args()
+    return parser.parse_args()
 
 
 def out_name(fmt: str) -> str:
@@ -130,7 +138,7 @@ def out_name(fmt: str) -> str:
     return "suite_error_summary.xlsx" if fmt == "xlsx" else "suite_error_summary.csv"
 
 
-def write_output(df: pd.DataFrame, path: Path, a: argparse.Namespace) -> None:
+def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None:
     """
     Write the DataFrame to CSV or XLSX.
 
@@ -140,7 +148,7 @@ def write_output(df: pd.DataFrame, path: Path, a: argparse.Namespace) -> None:
 
     "If it isn't pleasant to read, it won't get read."
     """
-    if a.format == "csv":
+    if args.format == "csv":
         df.to_csv(path, index=False, quoting=csv.QUOTE_ALL)
         print("OK ->", path.parent.resolve()); print("Generated:", path); return
 
@@ -158,11 +166,11 @@ def write_output(df: pd.DataFrame, path: Path, a: argparse.Namespace) -> None:
             border = {"border": 1}
             fmt_group = wb.add_format({
                 "bold": True, "align": "center", "valign": "vcenter", **border,
-                **({} if a.no_colors else {"bg_color": "#D9E1F2"})
+                **({} if args.no_colors else {"bg_color": "#D9E1F2"})
             })
             fmt_head = wb.add_format({
                 "bold": True, "align": "center", "valign": "vcenter", "text_wrap": True, **border,
-                **({} if a.no_colors else {"bg_color": "#F2F2F2"})
+                **({} if args.no_colors else {"bg_color": "#F2F2F2"})
             })
             fmt_text = wb.add_format({"text_wrap": True, "valign": "top"})
             fmt_num  = wb.add_format({"num_format": "#,##0", "align": "center"})
@@ -170,20 +178,32 @@ def write_output(df: pd.DataFrame, path: Path, a: argparse.Namespace) -> None:
             # ---------------- Build two-row header ----------------
             cols = list(df.columns)
             col = 0
-            # Left block (merge vertically)
-            for label in ["Suite", "Failed Tests", "Unstable Tests", "Total Messages"]:
+            # Left block (merge vertically) - Make headers more descriptive
+            descriptive_headers = [
+                "Test Suite",
+                "Failed Test Count",
+                "Unstable Test Count",
+                "Total Error Messages"
+            ]
+            for label in descriptive_headers:
                 ws.merge_range(0, col, 1, col, label, fmt_head); col += 1
 
-            # Top-i groups
-            top_n = a.top_n
+            # Top-i groups - More descriptive sub-headers
+            top_n = args.top_n
             for i in range(1, top_n + 1):
-                ws.merge_range(0, col, 0, col + 3, f"Top {i}", fmt_group)
-                for sub in [f"Top {i} Message", f"Top {i} Events", f"Top {i} Failed", f"Top {i} Unstable"]:
+                ws.merge_range(0, col, 0, col + 3, f"Top {i} Most Frequent Error", fmt_group)
+                descriptive_subs = [
+                    f"Error Message #{i}",
+                    f"Occurrences",
+                    f"Failed Tests",
+                    f"Unstable Tests"
+                ]
+                for sub in descriptive_subs:
                     ws.write(1, col, sub, fmt_head); col += 1
 
-            # Residual group
-            ws.merge_range(0, col, 0, col + 2, "Other", fmt_group)
-            for sub in ["Other Events", "Other Failed", "Other Unstable"]:
+            # Residual group - More descriptive
+            ws.merge_range(0, col, 0, col + 2, "All Other Errors", fmt_group)
+            for sub in ["Other Occurrences", "Other Failed Tests", "Other Unstable Tests"]:
                 ws.write(1, col, sub, fmt_head); col += 1
 
             # ---------------- Body with formats ----------------
@@ -231,170 +251,149 @@ def main() -> None:
 
     "Long → group → rank → wide — the classic pivot pipeline."
     """
-    a = parse_args()
+    args = parse_args()
 
     # Create output dir early so any logs/sidecars could be written here.
-    out = Path(a.output_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Robust read with error handling
     try:
-        df = pd.read_csv(a.input, header=0, low_memory=False, on_bad_lines="skip",
-                         sep=a.sep, encoding=a.encoding)
+        df = pd.read_csv(args.input, header=0, low_memory=False, on_bad_lines="skip",
+                         sep=args.sep, encoding=args.encoding)
     except FileNotFoundError:
-        raise SystemExit(f"Input file not found: {a.input}")
+        raise SystemExit(f"Input file not found: {args.input}")
     except pd.errors.EmptyDataError:
-        raise SystemExit(f"Input file is empty: {a.input}")
+        raise SystemExit(f"Input file is empty: {args.input}")
     except Exception as e:
         raise SystemExit(f"Error reading input file: {e}")
 
     # Collect requested message columns.
-    msg_cols = [c.strip() for c in a.message_cols.split(",") if c.strip()]
-    missing = [c for c in msg_cols if c not in df.columns]
+    message_columns = [c.strip() for c in args.message_cols.split(",") if c.strip()]
+    missing_columns = [c for c in message_columns if c not in df.columns]
 
-    # Hard requirements: suite and status columns must exist.
-    if a.suite_col not in df.columns:
-        raise SystemExit(f"Missing suite column: {a.suite_col}")
-    if a.status_col not in df.columns:
-        raise SystemExit(f"Missing status column: {a.status_col}")
+    # Since EXECUTION RESULT and TEST_SUITE are standard CSV columns,
+    # we can assume they exist and skip expensive validation
+    # Hard requirements: suite and status columns (skip validation for known standard columns)
+    required_columns = [args.suite_col, args.status_col]
+    missing_required = [col for col in required_columns if col not in df.columns]
+    if missing_required:
+        raise SystemExit(f"Missing required columns: {', '.join(missing_required)}")
 
     # Warn-and-continue: drop missing message columns but continue with the rest.
     # "Be strict on the essentials, forgiving on the peripherals."
-    if missing:
-        print(f"[warn] Missing message column(s): {', '.join(missing)} — continuing without them")
-        msg_cols = [c for c in msg_cols if c not in missing]
-    if not msg_cols:
+    if missing_columns:
+        print(f"[warn] Missing message column(s): {', '.join(missing_columns)} - continuing without them")
+        message_columns = [c for c in message_columns if c not in missing_columns]
+    if not message_columns:
         # If nothing left to analyze, fail clearly.
         raise SystemExit("No valid message columns left after filtering; nothing to summarize.")
 
     # ---------------- Blueprint for empty output ----------------
     # Ensures stable schema even if df becomes empty after filtering.
-    base_cols = [a.suite_col, "total_messages", "failed_tests_total", "unstable_tests_total"]
+    base_cols = [args.suite_col, "total_messages", "failed_tests_total", "unstable_tests_total"]
     per_i = ["message", "events", "failed_tests", "unstable_tests"]
-    top_cols = sum(([f"top{i}_{x}" for x in per_i] for i in range(1, a.top_n + 1)), [])
+    top_cols = sum(([f"top{i}_{x}" for x in per_i] for i in range(1, args.top_n + 1)), [])
     other_cols = ["other_events", "other_failed_tests", "other_unstable_tests"]
 
     if df.empty:
         # Early exit: nothing to report; still write an empty but well-formed file.
         empty = pd.DataFrame(columns=base_cols + top_cols + other_cols)
-        return write_output(empty, out / out_name(a.format), a)
+        return write_output(empty, output_dir / out_name(args.format), args)
 
-    # ---------------- EXPLICIT EXCLUSION OF PASSED TESTS ----------------
-    # STEP 1: Completely remove ALL PASSED tests from the dataset
+    # ---------------- FILTER TO ONLY FAILED/UNSTABLE TESTS ----------------
+    # Remove all tests that aren't FAILED or UNSTABLE (PASSED, INCONCLUSIVE, etc.)
     original_count = len(df)
-
-    # Explicitly exclude PASSED tests - multiple checks to be absolutely sure
-    df_no_passed = df[df[a.status_col] != "PASSED"].copy()
-    df_no_inconclusive = df_no_passed[df_no_passed[a.status_col] != "INCONCLUSIVE"].copy()
-
-    # Now filter to ONLY the exact statuses we want
-    df_filtered = df_no_inconclusive[df_no_inconclusive[a.status_col].isin(VALID_STATUSES)].copy()
+    df_filtered = df[df[args.status_col].isin(VALID_STATUSES)].copy()
     filtered_count = len(df_filtered)
 
-    print(f"ORIGINAL DATA: {original_count} total tests")
-    print(f"REMOVED PASSED TESTS: {len(df[df[a.status_col] == 'PASSED'])} PASSED tests excluded")
-    print(f"REMOVED INCONCLUSIVE: {len(df_no_passed[df_no_passed[a.status_col] == 'INCONCLUSIVE'])} INCONCLUSIVE tests excluded")
-    print(f"FINAL FILTERED DATA: {filtered_count} tests (ONLY FAILED/UNSTABLE)")
-
-    # ABSOLUTE VERIFICATION: Check that ZERO PASSED tests remain
-    passed_remaining = len(df_filtered[df_filtered[a.status_col] == "PASSED"])
-    if passed_remaining > 0:
-        raise SystemExit(f"CRITICAL ERROR: {passed_remaining} PASSED tests still in filtered data!")
-
-    # Verify only valid statuses remain
-    remaining_statuses = set(df_filtered[a.status_col].unique())
-    print(f"CONFIRMED: Only these statuses in filtered data: {sorted(remaining_statuses)}")
-
-    if not remaining_statuses.issubset(set(VALID_STATUSES)):
-        invalid = remaining_statuses - set(VALID_STATUSES)
-        raise SystemExit(f"ERROR: Invalid statuses found: {invalid}")
+    print(f"Filtered {original_count} tests -> {filtered_count} FAILED/UNSTABLE tests")
 
     if df_filtered.empty:
         print("No FAILED or UNSTABLE tests found!")
         empty = pd.DataFrame(columns=base_cols + top_cols + other_cols)
-        return write_output(empty, out / out_name(a.format), a)
+        return write_output(empty, output_dir / out_name(args.format), args)
 
     # ---------------- Per-suite totals by status ----------------
     # Count tests per suite by status so we can compute "Other <status>" later.
     status_totals = (
-        df_filtered.groupby([a.suite_col, a.status_col]).size()
+        df_filtered.groupby([args.suite_col, args.status_col]).size()
           .unstack(fill_value=0)
           .reindex(columns=VALID_STATUSES, fill_value=0)
           .reset_index()
           .rename(columns={"FAILED": "failed_tests_total", "UNSTABLE": "unstable_tests_total"})
     )
 
-    # ---------------- PROCESS ONLY MESSAGES FROM FAILED/UNSTABLE TESTS ----------------
+    # ---------------- PROCESS MESSAGES FROM FAILED/UNSTABLE TESTS ----------------
     # Add row IDs for tracking
     df_filtered["row_id"] = range(len(df_filtered))
 
     # Convert to long form - ONLY processing pre-filtered FAILED/UNSTABLE tests
     long = df_filtered.melt(
-        id_vars=[a.suite_col, "row_id", a.status_col],
-        value_vars=msg_cols,
+        id_vars=[args.suite_col, "row_id", args.status_col],
+        value_vars=message_columns,
         var_name="message_source",
         value_name="message_raw"
     )
     long["message_raw"] = long["message_raw"].astype("string")
     long = long[long["message_raw"].notna() & (long["message_raw"].str.strip() != "")]
 
-    # TRIPLE CHECK: Verify absolutely no PASSED tests in message data
-    if "PASSED" in long[a.status_col].values:
-        raise SystemExit("FATAL ERROR: PASSED tests found in message processing!")
-
-    statuses_in_data = set(long[a.status_col].unique())
-    print(f"MESSAGE PROCESSING: {len(long)} messages from {len(df_filtered)} tests")
-    print(f"ALL MESSAGE SOURCES CONFIRMED: {sorted(statuses_in_data)}")
-    print(f"ZERO PASSED TESTS IN MESSAGES: {'PASSED' not in statuses_in_data}")
-
-    if not statuses_in_data.issubset(set(VALID_STATUSES)):
-        invalid = statuses_in_data - set(VALID_STATUSES)
-        raise SystemExit(f"ERROR: Invalid statuses in message data: {invalid}")
+    print(f"Processing {len(long)} messages from {len(df_filtered)} tests")
 
     # ---------------- Build signatures ----------------
     # Option 1: normalized key (default) → robust grouping
     # Option 2: raw message → exact grouping
-    key = long["message_raw"].map(normalize) if a.group_by == "norm" \
+    key = long["message_raw"].map(normalize) if args.group_by == "norm" \
           else long["message_raw"].str.strip()
 
     # Optionally hash the signature for privacy.
-    long["signature"] = key.map(lambda s: hsig(s, a.hash_algo)) if a.hash_signature else key
+    long["signature"] = key.map(lambda s: hsig(s, args.hash_algo)) if args.hash_signature else key
 
     # ---------------- De-dupe within a single test row ----------------
     # If the same normalized signature appears in multiple message columns of the same row,
     # count it once. Prevents double counting "the same" error for one test.
-    long = long.drop_duplicates(subset=[a.suite_col, "row_id", "signature"], keep="first")
+    long = long.drop_duplicates(subset=[args.suite_col, "row_id", "signature"], keep="first")
 
     # ---------------- Status flags for aggregation ----------------
     # Using ints makes the subsequent sum() operations simple and fast.
-    long["_is_failed"]   = (long[a.status_col] == "FAILED").astype(int)
-    long["_is_unstable"] = (long[a.status_col] == "UNSTABLE").astype(int)
+    long["is_failed"]   = (long[args.status_col] == "FAILED").astype(int)
+    long["is_unstable"] = (long[args.status_col] == "UNSTABLE").astype(int)
 
     # ---------------- Aggregate per (suite, signature) ----------------
     # events         = how many test rows exhibited the message
     # failed_tests   = of those, how many were FAILED
     # unstable_tests = of those, how many were UNSTABLE
-    grp = (
-        long.groupby([a.suite_col, "signature"])
+    grouped_messages = (
+        long.groupby([args.suite_col, "signature"])
             .agg(events=("row_id", "count"),
-                 failed_tests=("_is_failed", "sum"),
-                 unstable_tests=("_is_unstable", "sum"))
+                 failed_tests=("is_failed", "sum"),
+                 unstable_tests=("is_unstable", "sum"))
             .reset_index()
     )
 
     # Add a visible example message for each signature (for human-friendly output).
-    first = (long.drop_duplicates([a.suite_col, "signature"])
-                 [[a.suite_col, "signature", "message_raw"]]
+    first_messages = (long.drop_duplicates([args.suite_col, "signature"])
+                 [[args.suite_col, "signature", "message_raw"]]
                  .rename(columns={"message_raw": "example_message"}))
-    grp = grp.merge(first, on=[a.suite_col, "signature"], how="left")
+    grouped_messages = grouped_messages.merge(first_messages, on=[args.suite_col, "signature"], how="left")
 
     # ---------------- Build the wide Top-N table per suite ----------------
     rows = []
-    status_totals_indexed = status_totals.set_index(a.suite_col)
-    for suite, g in grp.groupby(a.suite_col, sort=False):
+    status_totals_indexed = status_totals.set_index(args.suite_col)
+    for suite, suite_messages in grouped_messages.groupby(args.suite_col, sort=False):
         # Rank messages by frequency within the suite.
-        g = g.sort_values("events", ascending=False)
-        row = {a.suite_col: suite, "total_messages": g["events"].sum()}
+        suite_messages = suite_messages.sort_values("events", ascending=False)
+        row = {args.suite_col: suite, "total_messages": suite_messages["events"].sum()}
+
+        # Fetch per-suite status totals to compute residual "Other".
+        if suite in status_totals_indexed.index:
+            failed_total = status_totals_indexed.loc[suite, "failed_tests_total"]
+            unstable_total = status_totals_indexed.loc[suite, "unstable_tests_total"]
+        else:
+            failed_total = unstable_total = 0
+
+        row["failed_tests_total"] = failed_total
+        row["unstable_tests_total"] = unstable_total
 
         # Fetch per-suite status totals to compute residual "Other".
         if suite in status_totals_indexed.index:
@@ -407,17 +406,21 @@ def main() -> None:
         row["unstable_tests_total"] = unstable_total
 
         # Fill Top-N columns.
-        sum_e = sum_f = sum_u = 0
-        for i in range(1, a.top_n + 1):
-            if i <= len(g):
-                msg = g.iloc[i - 1]["example_message"]
+        sum_events = sum_failed = sum_unstable = 0
+        for i in range(1, args.top_n + 1):
+            if i <= len(suite_messages):
+                msg = suite_messages.iloc[i - 1]["example_message"]
                 # Optional readability: trim very long exemplars.
-                if a.truncate_len and isinstance(msg, str) and len(msg) > a.truncate_len:
-                    msg = msg[:a.truncate_len - 1] + "…"
+                if args.truncate_len and isinstance(msg, str) and len(msg) > args.truncate_len:
+                    msg = msg[:args.truncate_len - 1] + "..."
                 row[f"top{i}_message"]        = msg
-                row[f"top{i}_events"]         = g.iloc[i - 1]["events"];         sum_e += g.iloc[i - 1]["events"]
-                row[f"top{i}_failed_tests"]   = g.iloc[i - 1]["failed_tests"];   sum_f += g.iloc[i - 1]["failed_tests"]
-                row[f"top{i}_unstable_tests"] = g.iloc[i - 1]["unstable_tests"]; sum_u += g.iloc[i - 1]["unstable_tests"]
+                row[f"top{i}_events"]         = suite_messages.iloc[i - 1]["events"]
+                row[f"top{i}_failed_tests"]   = suite_messages.iloc[i - 1]["failed_tests"]
+                row[f"top{i}_unstable_tests"] = suite_messages.iloc[i - 1]["unstable_tests"]
+
+                sum_events += suite_messages.iloc[i - 1]["events"]
+                sum_failed += suite_messages.iloc[i - 1]["failed_tests"]
+                sum_unstable += suite_messages.iloc[i - 1]["unstable_tests"]
             else:
                 # Fill empty slots for suites with fewer than top_n messages
                 row[f"top{i}_message"]        = ""
@@ -426,63 +429,61 @@ def main() -> None:
                 row[f"top{i}_unstable_tests"] = 0
 
         # Residual bucket: long tail not in Top-N.
-        row["other_events"]          = max(0, row["total_messages"] - sum_e)
-        row["other_failed_tests"]    = max(0, row["failed_tests_total"] - sum_f)
-        row["other_unstable_tests"]  = max(0, row["unstable_tests_total"] - sum_u)
+        row["other_events"]          = max(0, row["total_messages"] - sum_events)
+        row["other_failed_tests"]    = max(0, row["failed_tests_total"] - sum_failed)
+        row["other_unstable_tests"]  = max(0, row["unstable_tests_total"] - sum_unstable)
         rows.append(row)
 
     # Combine suites and order columns.
-    wide = pd.DataFrame(rows).sort_values("total_messages", ascending=False)
+    results_df = pd.DataFrame(rows).sort_values("total_messages", ascending=False)
 
     # ---------------- Final ordering + labels ----------------
-    ordered = [a.suite_col, "failed_tests_total", "unstable_tests_total", "total_messages"]
-    for i in range(1, a.top_n + 1):
-        ordered += [f"top{i}_message", f"top{i}_events", f"top{i}_failed_tests", f"top{i}_unstable_tests"]
-    ordered += ["other_events", "other_failed_tests", "other_unstable_tests"]
+    ordered_columns = [args.suite_col, "failed_tests_total", "unstable_tests_total", "total_messages"]
+    for i in range(1, args.top_n + 1):
+        ordered_columns += [f"top{i}_message", f"top{i}_events", f"top{i}_failed_tests", f"top{i}_unstable_tests"]
+    ordered_columns += ["other_events", "other_failed_tests", "other_unstable_tests"]
 
     # Ensure every expected col exists (even if some Top-k cells are empty).
-    for c in ordered:
-        if c not in wide.columns:
-            wide[c] = "" if "message" in c else 0
-    wide = wide[ordered]
+    for col in ordered_columns:
+        if col not in results_df.columns:
+            results_df[col] = "" if "message" in col else 0
+    results_df = results_df[ordered_columns]
 
-    # Pretty mode: rename columns and write chosen formats (csv/xlsx/both).
-    if a.pretty:
-        rename = {
-            a.suite_col: "Suite",
-            "failed_tests_total": "Failed Tests",
-            "unstable_tests_total": "Unstable Tests",
-            "total_messages": "Total Messages",
-            "other_events": "Other Events",
-            "other_failed_tests": "Other Failed",
-            "other_unstable_tests": "Other Unstable",
+    # Pretty mode: rename columns with more descriptive names
+    if args.pretty:
+        column_renames = {
+            args.suite_col: "Test Suite Name",
+            "failed_tests_total": "Total Failed Tests",
+            "unstable_tests_total": "Total Unstable Tests",
+            "total_messages": "Total Error Messages",
+            "other_events": "Other Error Occurrences",
+            "other_failed_tests": "Other Failed Tests",
+            "other_unstable_tests": "Other Unstable Tests",
         }
-        for i in range(1, a.top_n + 1):
-            rename.update({
-                f"top{i}_message":        f"Top {i} Message",
-                f"top{i}_events":         f"Top {i} Events",
-                f"top{i}_failed_tests":   f"Top {i} Failed",
-                f"top{i}_unstable_tests": f"Top {i} Unstable",
+        for i in range(1, args.top_n + 1):
+            column_renames.update({
+                f"top{i}_message":        f"Top {i} Error Message",
+                f"top{i}_events":         f"Top {i} Occurrences",
+                f"top{i}_failed_tests":   f"Top {i} Failed Count",
+                f"top{i}_unstable_tests": f"Top {i} Unstable Count",
             })
-        wide = wide.rename(columns=rename)
+        results_df = results_df.rename(columns=column_renames)
 
         # Write output (support csv/xlsx/both).
-        out_dir = Path(a.output_dir)
+        if args.format in ("csv", "both"):
+            write_output(results_df,
+                         output_dir / "suite_error_summary.csv",
+                         Namespace(**{**vars(args), "format": "csv"}))
 
-        if a.format in ("csv", "both"):
-            write_output(wide,
-                         out_dir / "suite_error_summary.csv",
-                         Namespace(**{**vars(a), "format": "csv"}))
-
-        if a.format in ("xlsx", "both"):
-            write_output(wide,
-                         out_dir / "suite_error_summary.xlsx",
-                         Namespace(**{**vars(a), "format": "xlsx"}))
+        if args.format in ("xlsx", "both"):
+            write_output(results_df,
+                         output_dir / "suite_error_summary.xlsx",
+                         Namespace(**{**vars(args), "format": "xlsx"}))
 
         return
 
     # Non-pretty path: single write using the requested format.
-    write_output(wide, out / out_name(a.format), a)
+    write_output(results_df, output_dir / out_name(args.format), args)
 
 
 if __name__ == "__main__":
