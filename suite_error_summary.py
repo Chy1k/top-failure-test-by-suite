@@ -9,7 +9,6 @@ a nicely formatted XLSX.
 """
 import argparse
 import csv
-import hashlib
 import re
 from pathlib import Path
 import pandas as pd
@@ -79,20 +78,6 @@ def normalize(s: str) -> str:
     return re.sub(r"\s+"," ", s).strip()
 
 
-def hsig(t: str, algo: str = "sha1") -> str:
-    """
-    Compute a hexadecimal hash signature for the given text.
-
-    - Default algo is sha1; you can pass --hash-algo=sha256, md5, etc. (if hashlib provides it).
-    - Useful for privacy-preserving grouping when --hash-signature is set.
-
-    "Hash when you must share counts, not content."
-    """
-    h = getattr(hashlib, algo, hashlib.sha1)()
-    h.update(t.encode(DEFAULT_ENCODING))
-    return h.hexdigest()
-
-
 def parse_args() -> argparse.Namespace:
     """
     Define and parse the command-line interface.
@@ -100,7 +85,6 @@ def parse_args() -> argparse.Namespace:
     Key args:
     - --message-cols: comma-separated columns to scan for messages.
     - --group-by: 'norm' (default) groups by normalized message; 'raw' uses exact text.
-    - --hash-signature: emit hashed signatures instead of text (privacy).
     - --pretty/--format: presentation-oriented exports (CSV/XLSX).
     - --top-n: number of top messages per suite.
 
@@ -115,8 +99,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--suite-col", default="TEST_SUITE", help='Column name for test suite (default: TEST_SUITE)')
     parser.add_argument("--status-col", default="EXECUTION RESULT", help='Column name for test status (default: EXECUTION RESULT)')
     parser.add_argument("--group-by", choices=["norm", "raw"], default="norm")
-    parser.add_argument("--hash-signature", action="store_true")
-    parser.add_argument("--hash-algo", default="sha1")
     parser.add_argument("--sep", default=",")
     parser.add_argument("--encoding", default=None)
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
@@ -346,8 +328,7 @@ def main() -> None:
     key = long["message_raw"].map(normalize) if args.group_by == "norm" \
           else long["message_raw"].str.strip()
 
-    # Optionally hash the signature for privacy.
-    long["signature"] = key.map(lambda s: hsig(s, args.hash_algo)) if args.hash_signature else key
+    long["signature"] = key
 
     # ---------------- De-dupe within a single test row ----------------
     # If the same normalized signature appears in multiple message columns of the same row,

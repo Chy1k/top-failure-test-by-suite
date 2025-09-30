@@ -111,7 +111,6 @@ export EXTRA_FLAGS="--pretty --format xlsx"               # Additional options
 | `--group-by` | Grouping method: `norm` or `raw` | `norm` |
 | `--format` | Output format: `csv`, `xlsx`, `both` | `csv` |
 | `--pretty` | Use human-friendly column names | `false` |
-| `--hash-signature` | Hash messages for privacy | `false` |
 | `--truncate-len` | Trim long messages to N chars | `0` (disabled) |
 | `--no-colors` | Disable XLSX colors | `false` |
 
@@ -146,17 +145,6 @@ The tool generates:
 ```bash
 # Top 10 messages, both formats, pretty headers
 EXTRA_FLAGS="--top-n 10 --format both --pretty" ./suite_summary.sh test_results.csv analysis_output
-```
-
-### Privacy Mode (Hash Messages)
-```bash
-python suite_error_summary.py \
-  --input sensitive_logs.csv \
-  --output-dir secure_output \
-  --message-cols "ERROR_MSG" \
-  --suite-col "SUITE_NAME" \
-  --hash-signature \
-  --format csv
 ```
 
 ## Troubleshooting
