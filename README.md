@@ -51,6 +51,7 @@ This tool transforms raw test execution data into actionable insights, enabling 
 ```bash
 ./suite_summary.sh your_logs.csv
 ```
+- If you use the original CSV name, it will create an aditional folder with the out_name_of_your_file
 
 **With custom output directory:**
 ```bash
