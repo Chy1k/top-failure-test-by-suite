@@ -1,6 +1,6 @@
 # Suite Error Summary Tool
 
-A Python tool that analyzes test execution logs and produces a "Top-N error messages + Other" summary with FAILED/UNSTABLE breakdowns, exported as CSV or nicely formatted XLSX.
+A Python tool that analyzes test execution logs and produces a "Top-N (top 5 by default) error messages + Other" summary with FAILED/UNSTABLE breakdowns, exported as CSV or nicely formatted XLSX.
 
 ## Business Value
 
@@ -47,7 +47,7 @@ This tool transforms raw test execution data into actionable insights, enabling 
 
 #### Option 1: Using the Bash Wrapper (Recommended)
 
-**Basic usage:**
+**Basic usage (only XLSX):**
 ```bash
 ./suite_summary.sh your_logs.csv
 ```
@@ -57,7 +57,7 @@ This tool transforms raw test execution data into actionable insights, enabling 
 ./suite_summary.sh your_logs.csv my_output_folder
 ```
 
-**With additional options:**
+**With additional options (both CSV and XLSX):**
 ```bash
 EXTRA_FLAGS="--format both --pretty --top-n 10" ./suite_summary.sh your_logs.csv
 ```
