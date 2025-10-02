@@ -160,15 +160,8 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
             # ---------------- Build two-row header ----------------
             cols = list(df.columns)
             col = 0
-            # Left block (merge vertically) - Make headers more descriptive
-            descriptive_headers = [
-                "Test Suite",
-                "Failed Test Count",
-                "Unstable Test Count",
-                "Total Error Messages"
-            ]
-            for label in descriptive_headers:
-                ws.merge_range(0, col, 1, col, label, fmt_head); col += 1
+            # Left block (merge vertically) - Just the suite name
+            ws.merge_range(0, col, 1, col, "Test Suite", fmt_head); col += 1
 
             # Top-i groups - More descriptive sub-headers
             top_n = args.top_n
@@ -191,7 +184,7 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
             # ---------------- Body with formats ----------------
             nrows, ncols = df.shape
             # Identify numeric columns for number formatting.
-            num_cols = [j for j, c in enumerate(cols) if ("Events" in c or "Failed" in c or "Unstable" in c or c == "Total Messages")]
+            num_cols = [j for j, c in enumerate(cols) if ("Events" in c or "Failed" in c or "Unstable" in c)]
             for r in range(nrows):
                 rr = start_row + r
                 for j, c in enumerate(cols):
@@ -201,11 +194,11 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
                     else:
                         ws.write(rr, j, "" if pd.isna(v) else str(v), fmt_text)
 
-            # Column widths tuned for readability: suite + totals + wide message columns.
-            widths = [18, 14, 14, 14]
+            # Column widths tuned for readability: suite + wide message columns.
+            widths = [18]  # Suite column
             for _ in range(top_n):
-                widths += [60, 12, 12, 12]
-            widths += [12, 12, 12]
+                widths += [60, 12, 12, 12]  # Message, Occurrences, Failed, Unstable
+            widths += [12, 12, 12]  # Other columns
             for j, w in enumerate(widths[:ncols]):
                 ws.set_column(j, j, w)
 
@@ -273,7 +266,7 @@ def main() -> None:
 
     # ---------------- Blueprint for empty output ----------------
     # Ensures stable schema even if df becomes empty after filtering.
-    base_cols = [args.suite_col, "total_messages", "failed_tests_total", "unstable_tests_total"]
+    base_cols = [args.suite_col]
     per_i = ["message", "events", "failed_tests", "unstable_tests"]
     top_cols = sum(([f"top{i}_{x}" for x in per_i] for i in range(1, args.top_n + 1)), [])
     other_cols = ["other_events", "other_failed_tests", "other_unstable_tests"]
@@ -364,7 +357,7 @@ def main() -> None:
     for suite, suite_messages in grouped_messages.groupby(args.suite_col, sort=False):
         # Rank messages by frequency within the suite.
         suite_messages = suite_messages.sort_values("events", ascending=False)
-        row = {args.suite_col: suite, "total_messages": suite_messages["events"].sum()}
+        row = {args.suite_col: suite}
 
         # Fetch per-suite status totals to compute residual "Other".
         if suite in status_totals_indexed.index:
@@ -372,19 +365,6 @@ def main() -> None:
             unstable_total = status_totals_indexed.loc[suite, "unstable_tests_total"]
         else:
             failed_total = unstable_total = 0
-
-        row["failed_tests_total"] = failed_total
-        row["unstable_tests_total"] = unstable_total
-
-        # Fetch per-suite status totals to compute residual "Other".
-        if suite in status_totals_indexed.index:
-            failed_total = status_totals_indexed.loc[suite, "failed_tests_total"]
-            unstable_total = status_totals_indexed.loc[suite, "unstable_tests_total"]
-        else:
-            failed_total = unstable_total = 0
-
-        row["failed_tests_total"] = failed_total
-        row["unstable_tests_total"] = unstable_total
 
         # Fill Top-N columns.
         sum_events = sum_failed = sum_unstable = 0
@@ -410,16 +390,22 @@ def main() -> None:
                 row[f"top{i}_unstable_tests"] = 0
 
         # Residual bucket: long tail not in Top-N.
-        row["other_events"]          = max(0, row["total_messages"] - sum_events)
-        row["other_failed_tests"]    = max(0, row["failed_tests_total"] - sum_failed)
-        row["other_unstable_tests"]  = max(0, row["unstable_tests_total"] - sum_unstable)
+        total_messages = suite_messages["events"].sum()
+        row["other_events"]          = max(0, total_messages - sum_events)
+        row["other_failed_tests"]    = max(0, failed_total - sum_failed)
+        row["other_unstable_tests"]  = max(0, unstable_total - sum_unstable)
         rows.append(row)
 
     # Combine suites and order columns.
-    results_df = pd.DataFrame(rows).sort_values("total_messages", ascending=False)
+    results_df = pd.DataFrame(rows)
+    # Sort by the first top message's event count if available, otherwise by suite name
+    if len(results_df) > 0 and "top1_events" in results_df.columns:
+        results_df = results_df.sort_values("top1_events", ascending=False)
+    else:
+        results_df = results_df.sort_values(args.suite_col)
 
     # ---------------- Final ordering + labels ----------------
-    ordered_columns = [args.suite_col, "failed_tests_total", "unstable_tests_total", "total_messages"]
+    ordered_columns = [args.suite_col]
     for i in range(1, args.top_n + 1):
         ordered_columns += [f"top{i}_message", f"top{i}_events", f"top{i}_failed_tests", f"top{i}_unstable_tests"]
     ordered_columns += ["other_events", "other_failed_tests", "other_unstable_tests"]
@@ -434,9 +420,6 @@ def main() -> None:
     if args.pretty:
         column_renames = {
             args.suite_col: "Test Suite Name",
-            "failed_tests_total": "Total Failed Tests",
-            "unstable_tests_total": "Total Unstable Tests",
-            "total_messages": "Total Error Messages",
             "other_events": "Other Error Occurrences",
             "other_failed_tests": "Other Failed Tests",
             "other_unstable_tests": "Other Unstable Tests",
