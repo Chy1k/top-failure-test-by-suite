@@ -177,9 +177,8 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
                     ws.write(1, col, sub, fmt_head); col += 1
 
             # Residual group - More descriptive
-            ws.merge_range(0, col, 0, col + 2, "All Other Errors", fmt_group)
-            for sub in ["Other Occurrences", "Other Failed Tests", "Other Unstable Tests"]:
-                ws.write(1, col, sub, fmt_head); col += 1
+            ws.merge_range(0, col, 0, col, "All Other Errors", fmt_group)
+            ws.write(1, col, "Other Occurrences", fmt_head); col += 1
 
             # ---------------- Body with formats ----------------
             nrows, ncols = df.shape
@@ -198,7 +197,7 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
             widths = [18]  # Suite column
             for _ in range(top_n):
                 widths += [60, 12, 12, 12]  # Message, Occurrences, Failed, Unstable
-            widths += [12, 12, 12]  # Other columns
+            widths += [12]  # Other column
             for j, w in enumerate(widths[:ncols]):
                 ws.set_column(j, j, w)
 
@@ -269,7 +268,7 @@ def main() -> None:
     base_cols = [args.suite_col]
     per_i = ["message", "events", "failed_tests", "unstable_tests"]
     top_cols = sum(([f"top{i}_{x}" for x in per_i] for i in range(1, args.top_n + 1)), [])
-    other_cols = ["other_events", "other_failed_tests", "other_unstable_tests"]
+    other_cols = ["other_events"]
 
     if df.empty:
         # Early exit: nothing to report; still write an empty but well-formed file.
@@ -391,9 +390,7 @@ def main() -> None:
 
         # Residual bucket: long tail not in Top-N.
         total_messages = suite_messages["events"].sum()
-        row["other_events"]          = max(0, total_messages - sum_events)
-        row["other_failed_tests"]    = max(0, failed_total - sum_failed)
-        row["other_unstable_tests"]  = max(0, unstable_total - sum_unstable)
+        row["other_events"] = max(0, total_messages - sum_events)
         rows.append(row)
 
     # Combine suites and order columns.
@@ -408,7 +405,7 @@ def main() -> None:
     ordered_columns = [args.suite_col]
     for i in range(1, args.top_n + 1):
         ordered_columns += [f"top{i}_message", f"top{i}_events", f"top{i}_failed_tests", f"top{i}_unstable_tests"]
-    ordered_columns += ["other_events", "other_failed_tests", "other_unstable_tests"]
+    ordered_columns += ["other_events"]
 
     # Ensure every expected col exists (even if some Top-k cells are empty).
     for col in ordered_columns:
@@ -421,8 +418,6 @@ def main() -> None:
         column_renames = {
             args.suite_col: "Test Suite Name",
             "other_events": "Other Error Occurrences",
-            "other_failed_tests": "Other Failed Tests",
-            "other_unstable_tests": "Other Unstable Tests",
         }
         for i in range(1, args.top_n + 1):
             column_renames.update({
