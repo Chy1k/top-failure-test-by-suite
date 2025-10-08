@@ -9,7 +9,7 @@ TOPN=${TOPN:-5}
 GROUP_BY=${GROUP_BY:-norm}
 SEP=${SEP:-","}
 ENCODING=${ENCODING:-"utf-8"}
-EXTRA_FLAGS=${EXTRA_FLAGS:-"--format both --pretty --format xlsx --no-colors"}
+EXTRA_FLAGS=${EXTRA_FLAGS:-"--format xlsx --pretty --no-colors"}
 
 usage(){ echo "Usage: $0 <logs.csv> [out_dir]"; exit 1; }
 [[ $# -lt 1 ]] && usage

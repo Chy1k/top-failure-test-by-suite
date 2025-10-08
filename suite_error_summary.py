@@ -12,20 +12,10 @@ import csv
 import re
 from pathlib import Path
 import pandas as pd
-from argparse import Namespace
 
 # ---------------- Constants ----------------
 VALID_STATUSES = ["FAILED", "UNSTABLE"]
 DEFAULT_TOP_N = 5
-DEFAULT_ENCODING = "utf-8"
-
-# Standard CSV column names (always the same format)
-STANDARD_COLUMNS = {
-    'TEST_SUITE': 'TEST_SUITE',
-    'EXECUTION_RESULT': 'EXECUTION RESULT',
-    'FAILURE_MESSAGE_1': 'FAILURE MESSAGE 1',
-    'FAILURE_MESSAGE_2': 'FAILURE MESSAGE 2'
-}
 
 # ---------------- Normalization ----------------
 # Precompiled regexes used to mask volatile bits in messages so semantically
@@ -131,12 +121,13 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
     "If it isn't pleasant to read, it won't get read."
     """
     if args.format == "csv":
-        df.to_csv(path, index=False, quoting=csv.QUOTE_ALL)
-        print("OK ->", path.parent.resolve()); print("Generated:", path); return
+        write_csv_safely(df, path)
+        print("Generated:", path)
+        return
 
     # XLSX pretty (no colors if --no-colors)
     try:
-        import xlsxwriter  # noqa: F401
+        import xlsxwriter
         with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
             sheet = "Summary"
             start_row = 2  # leave two rows for multi-line header
@@ -164,8 +155,7 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
             ws.merge_range(0, col, 1, col, "Test Suite", fmt_head); col += 1
 
             # Top-i groups - More descriptive sub-headers
-            top_n = args.top_n
-            for i in range(1, top_n + 1):
+            for i in range(1, args.top_n + 1):
                 ws.merge_range(0, col, 0, col + 3, f"Top {i} Most Frequent Error", fmt_group)
                 descriptive_subs = [
                     f"Error Message #{i}",
@@ -196,7 +186,7 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
 
             # Column widths tuned for readability: suite + wide message columns.
             widths = [18]  # Suite column
-            for _ in range(top_n):
+            for _ in range(args.top_n):
                 widths += [60, 12, 12, 12]  # Message, Occurrences, Failed, Unstable
             widths += [12, 12, 12]  # Other columns
             for j, w in enumerate(widths[:ncols]):
@@ -206,12 +196,26 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
             ws.freeze_panes(start_row, 1)
             ws.autofilter(1, 0, 1, ncols - 1)
 
-        print("OK ->", path.parent.resolve()); print("Generated:", path)
+        print("Generated:", path)
     except ImportError:
         # Fallback to CSV if xlsxwriter is missing — still produce something useful.
         alt = path.with_suffix(".csv")
-        df.to_csv(alt, index=False, quoting=csv.QUOTE_ALL)
+        write_csv_safely(df, alt)
         print("xlsxwriter not installed; wrote CSV instead:", alt)
+
+
+def create_empty_output(args: argparse.Namespace) -> pd.DataFrame:
+    """Create an empty DataFrame with the expected schema."""
+    base_cols = [args.suite_col]
+    per_i = ["message", "events", "failed_tests", "unstable_tests"]
+    top_cols = sum(([f"top{i}_{x}" for x in per_i] for i in range(1, args.top_n + 1)), [])
+    other_cols = ["other_events", "other_failed_tests", "other_unstable_tests"]
+    return pd.DataFrame(columns=base_cols + top_cols + other_cols)
+
+
+def write_csv_safely(df: pd.DataFrame, path: Path) -> None:
+    """Write DataFrame to CSV with consistent safe settings."""
+    df.to_csv(path, index=False, quoting=csv.QUOTE_ALL)
 
 
 def main() -> None:
@@ -247,9 +251,7 @@ def main() -> None:
     message_columns = [c.strip() for c in args.message_cols.split(",") if c.strip()]
     missing_columns = [c for c in message_columns if c not in df.columns]
 
-    # Since EXECUTION RESULT and TEST_SUITE are standard CSV columns,
-    # we can assume they exist and skip expensive validation
-    # Hard requirements: suite and status columns (skip validation for known standard columns)
+    # Hard requirements: suite and status columns
     required_columns = [args.suite_col, args.status_col]
     missing_required = [col for col in required_columns if col not in df.columns]
     if missing_required:
@@ -264,17 +266,9 @@ def main() -> None:
         # If nothing left to analyze, fail clearly.
         raise SystemExit("No valid message columns left after filtering; nothing to summarize.")
 
-    # ---------------- Blueprint for empty output ----------------
-    # Ensures stable schema even if df becomes empty after filtering.
-    base_cols = [args.suite_col]
-    per_i = ["message", "events", "failed_tests", "unstable_tests"]
-    top_cols = sum(([f"top{i}_{x}" for x in per_i] for i in range(1, args.top_n + 1)), [])
-    other_cols = ["other_events", "other_failed_tests", "other_unstable_tests"]
-
     if df.empty:
         # Early exit: nothing to report; still write an empty but well-formed file.
-        empty = pd.DataFrame(columns=base_cols + top_cols + other_cols)
-        return write_output(empty, output_dir / out_name(args.format), args)
+        return write_output(create_empty_output(args), output_dir / out_name(args.format), args)
 
     # ---------------- FILTER TO ONLY FAILED/UNSTABLE TESTS ----------------
     # Remove all tests that aren't FAILED or UNSTABLE (PASSED, INCONCLUSIVE, etc.)
@@ -286,8 +280,7 @@ def main() -> None:
 
     if df_filtered.empty:
         print("No FAILED or UNSTABLE tests found!")
-        empty = pd.DataFrame(columns=base_cols + top_cols + other_cols)
-        return write_output(empty, output_dir / out_name(args.format), args)
+        return write_output(create_empty_output(args), output_dir / out_name(args.format), args)
 
     # ---------------- Per-suite totals by status ----------------
     # Count tests per suite by status so we can compute "Other <status>" later.
@@ -370,18 +363,22 @@ def main() -> None:
         sum_events = sum_failed = sum_unstable = 0
         for i in range(1, args.top_n + 1):
             if i <= len(suite_messages):
-                msg = suite_messages.iloc[i - 1]["example_message"]
+                # Get the current message row once to avoid repeated iloc calls
+                current_msg = suite_messages.iloc[i - 1]
+                msg = current_msg["example_message"]
+
                 # Optional readability: trim very long exemplars.
                 if args.truncate_len and isinstance(msg, str) and len(msg) > args.truncate_len:
                     msg = msg[:args.truncate_len - 1] + "..."
-                row[f"top{i}_message"]        = msg
-                row[f"top{i}_events"]         = suite_messages.iloc[i - 1]["events"]
-                row[f"top{i}_failed_tests"]   = suite_messages.iloc[i - 1]["failed_tests"]
-                row[f"top{i}_unstable_tests"] = suite_messages.iloc[i - 1]["unstable_tests"]
 
-                sum_events += suite_messages.iloc[i - 1]["events"]
-                sum_failed += suite_messages.iloc[i - 1]["failed_tests"]
-                sum_unstable += suite_messages.iloc[i - 1]["unstable_tests"]
+                row[f"top{i}_message"]        = msg
+                row[f"top{i}_events"]         = current_msg["events"]
+                row[f"top{i}_failed_tests"]   = current_msg["failed_tests"]
+                row[f"top{i}_unstable_tests"] = current_msg["unstable_tests"]
+
+                sum_events += current_msg["events"]
+                sum_failed += current_msg["failed_tests"]
+                sum_unstable += current_msg["unstable_tests"]
             else:
                 # Fill empty slots for suites with fewer than top_n messages
                 row[f"top{i}_message"]        = ""
@@ -435,14 +432,14 @@ def main() -> None:
 
         # Write output (support csv/xlsx/both).
         if args.format in ("csv", "both"):
-            write_output(results_df,
-                         output_dir / "suite_error_summary.csv",
-                         Namespace(**{**vars(args), "format": "csv"}))
+            # Create a copy of args with format set to csv
+            csv_args = argparse.Namespace(**{**vars(args), "format": "csv"})
+            write_output(results_df, output_dir / "suite_error_summary.csv", csv_args)
 
         if args.format in ("xlsx", "both"):
-            write_output(results_df,
-                         output_dir / "suite_error_summary.xlsx",
-                         Namespace(**{**vars(args), "format": "xlsx"}))
+            # Create a copy of args with format set to xlsx
+            xlsx_args = argparse.Namespace(**{**vars(args), "format": "xlsx"})
+            write_output(results_df, output_dir / "suite_error_summary.xlsx", xlsx_args)
 
         return
 
