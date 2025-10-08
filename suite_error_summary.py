@@ -449,14 +449,18 @@ def main() -> None:
 
         # Write output (support csv/xlsx/both).
         if args.output_format in ("csv", "both"):
-            # Create a copy of args with format set to csv
-            csv_args = argparse.Namespace(**{**vars(args), "output_format": "csv"})
-            write_output(results_df, output_dir / "suite_error_summary.csv", csv_args)
+            # Temporarily change format for CSV output
+            original_format = args.output_format
+            args.output_format = "csv"
+            write_output(results_df, output_dir / "suite_error_summary.csv", args)
+            args.output_format = original_format
 
         if args.output_format in ("xlsx", "both"):
-            # Create a copy of args with format set to xlsx
-            xlsx_args = argparse.Namespace(**{**vars(args), "output_format": "xlsx"})
-            write_output(results_df, output_dir / "suite_error_summary.xlsx", xlsx_args)
+            # Temporarily change format for XLSX output
+            original_format = args.output_format
+            args.output_format = "xlsx"
+            write_output(results_df, output_dir / "suite_error_summary.xlsx", args)
+            args.output_format = original_format
 
         return
 
