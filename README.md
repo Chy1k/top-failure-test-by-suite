@@ -48,11 +48,12 @@ This tool transforms raw test execution data into actionable insights, enabling 
 
 #### Option 1: Using the Bash Wrapper (Recommended)
 
-**Basic usage (only XLSX):**
+**Basic usage (CSV and XLSX):**
 ```bash
 ./suite_summary.sh your_logs.csv
 ```
-- It will create an output folder = out_name_of_your_file
+- Creates both CSV and XLSX files by default
+- Output folder: `out_name_of_your_file`
 
 **With custom output directory:**
 ```bash
@@ -62,6 +63,16 @@ This tool transforms raw test execution data into actionable insights, enabling 
 **With additional options (CSV and XLSX):**
 ```bash
 EXTRA_FLAGS="--format both --pretty --top-n 10" ./suite_summary.sh your_logs.csv
+```
+
+**For only XLSX:**
+```bash
+EXTRA_FLAGS="--format xlsx --pretty" ./suite_summary.sh your_logs.csv
+```
+
+**For only CSV:**
+```bash
+EXTRA_FLAGS="--format csv" ./suite_summary.sh your_logs.csv
 ```
 
 #### Option 2: Direct Python Execution
