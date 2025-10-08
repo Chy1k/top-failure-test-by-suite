@@ -2,14 +2,25 @@
 set -Eeuo pipefail
 
 # Defaults (override by env if needed)
-MESSAGE_COLS=${MESSAGE_COLS:-"FAILURE MESSAGE 1,FAILURE MESSAGE 2"}
-SUITE_COL=${SUITE_COL:-"TEST_SUITE"}
-STATUS_COL=${STATUS_COL:-"EXECUTION RESULT"}
-TOPN=${TOPN:-5}
-GROUP_BY=${GROUP_BY:-norm}
-SEP=${SEP:-","}
-ENCODING=${ENCODING:-"utf-8"}
-EXTRA_FLAGS=${EXTRA_FLAGS:-"--format both --pretty --no-colors"}
+# New user-friendly variable names (preferred)
+ERROR_MESSAGE_COLUMNS=${ERROR_MESSAGE_COLUMNS:-"FAILURE MESSAGE 1,FAILURE MESSAGE 2"}
+TEST_SUITE_COLUMN=${TEST_SUITE_COLUMN:-"TEST_SUITE"}
+TEST_STATUS_COLUMN=${TEST_STATUS_COLUMN:-"EXECUTION RESULT"}
+TOP_ERRORS_COUNT=${TOP_ERRORS_COUNT:-5}
+GROUPING_METHOD=${GROUPING_METHOD:-normalized}
+CSV_SEPARATOR=${CSV_SEPARATOR:-","}
+FILE_ENCODING=${FILE_ENCODING:-"utf-8"}
+
+# Backwards compatibility with legacy variable names
+ERROR_MESSAGE_COLUMNS=${MESSAGE_COLS:-$ERROR_MESSAGE_COLUMNS}
+TEST_SUITE_COLUMN=${SUITE_COL:-$TEST_SUITE_COLUMN}
+TEST_STATUS_COLUMN=${STATUS_COL:-$TEST_STATUS_COLUMN}
+TOP_ERRORS_COUNT=${TOPN:-$TOP_ERRORS_COUNT}
+GROUPING_METHOD=${GROUP_BY:-$GROUPING_METHOD}
+CSV_SEPARATOR=${SEP:-$CSV_SEPARATOR}
+FILE_ENCODING=${ENCODING:-$FILE_ENCODING}
+
+EXTRA_FLAGS=${EXTRA_FLAGS:-"--output-format both --use-friendly-headers --disable-excel-colors"}
 
 usage(){ echo "Usage: $0 <logs.csv> [out_dir]"; exit 1; }
 [[ $# -lt 1 ]] && usage
@@ -45,18 +56,18 @@ RUNLOG="$OUT/run.log"
 
 # Build command with smart defaults
 CMD_ARGS=(
-  --input "$CSV_ARG"
-  --output-dir "$OUT_ARG"
-  --message-cols "$MESSAGE_COLS"
-  --group-by "$GROUP_BY"
-  --top-n "$TOPN"
-  --sep "$SEP"
-  --encoding "$ENCODING"
+  --input-file "$CSV_ARG"
+  --output-directory "$OUT_ARG"
+  --error-message-columns "$ERROR_MESSAGE_COLUMNS"
+  --grouping-method "$GROUPING_METHOD"
+  --top-errors-count "$TOP_ERRORS_COUNT"
+  --csv-separator "$CSV_SEPARATOR"
+  --file-encoding "$FILE_ENCODING"
 )
 
 # Only add suite/status columns if they differ from defaults
-[[ "$SUITE_COL" != "TEST_SUITE" ]] && CMD_ARGS+=(--suite-col "$SUITE_COL")
-[[ "$STATUS_COL" != "EXECUTION RESULT" ]] && CMD_ARGS+=(--status-col "$STATUS_COL")
+[[ "$TEST_SUITE_COLUMN" != "TEST_SUITE" ]] && CMD_ARGS+=(--test-suite-column "$TEST_SUITE_COLUMN")
+[[ "$TEST_STATUS_COLUMN" != "EXECUTION RESULT" ]] && CMD_ARGS+=(--test-status-column "$TEST_STATUS_COLUMN")
 
 set -x
 "$PY" "$PY_SCRIPT" "${CMD_ARGS[@]}" $EXTRA_FLAGS 2>&1 | tee "$RUNLOG"

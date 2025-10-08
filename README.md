@@ -62,30 +62,30 @@ This tool transforms raw test execution data into actionable insights, enabling 
 
 **With additional options (CSV and XLSX):**
 ```bash
-EXTRA_FLAGS="--format both --pretty --top-n 10" ./suite_summary.sh your_logs.csv
+EXTRA_FLAGS="--output-format both --use-friendly-headers --top-errors-count 10" ./suite_summary.sh your_logs.csv
 ```
 
 **For only XLSX:**
 ```bash
-EXTRA_FLAGS="--format xlsx --pretty" ./suite_summary.sh your_logs.csv
+EXTRA_FLAGS="--output-format xlsx --use-friendly-headers" ./suite_summary.sh your_logs.csv
 ```
 
 **For only CSV:**
 ```bash
-EXTRA_FLAGS="--format csv" ./suite_summary.sh your_logs.csv
+EXTRA_FLAGS="--output-format csv" ./suite_summary.sh your_logs.csv
 ```
 
 #### Option 2: Direct Python Execution
 
 ```bash
 python suite_error_summary.py \
-  --input logs.csv \
-  --output-dir out_logs \
-  --message-cols "FAILURE MESSAGE 1,FAILURE MESSAGE 2" \
-  --suite-col TEST_SUITE \
-  --status-col "EXECUTION RESULT" \
-  --pretty \
-  --format xlsx
+  --input-file logs.csv \
+  --output-directory out_logs \
+  --error-message-columns "FAILURE MESSAGE 1,FAILURE MESSAGE 2" \
+  --test-suite-column TEST_SUITE \
+  --test-status-column "EXECUTION RESULT" \
+  --use-friendly-headers \
+  --output-format xlsx
 ```
 
 ## Input Requirements
@@ -103,29 +103,37 @@ Your CSV file must contain:
 ### Environment Variables (for bash wrapper)
 
 ```bash
-export MESSAGE_COLS="FAILURE MESSAGE 1,FAILURE MESSAGE 2"  # Message columns to analyze
-export SUITE_COL="TEST_SUITE"                              # Suite grouping column
-export STATUS_COL="EXECUTION RESULT"                       # Status column
-export TOPN=5                                              # Number of top messages per suite
-export GROUP_BY=norm                                       # norm (normalized) or raw
-export EXTRA_FLAGS="--pretty --format xlsx"               # Additional options
+# New user-friendly variable names (recommended)
+export ERROR_MESSAGE_COLUMNS="FAILURE MESSAGE 1,FAILURE MESSAGE 2"  # Message columns to analyze
+export TEST_SUITE_COLUMN="TEST_SUITE"                              # Suite grouping column
+export TEST_STATUS_COLUMN="EXECUTION RESULT"                       # Status column
+export TOP_ERRORS_COUNT=5                                          # Number of top messages per suite
+export GROUPING_METHOD=normalized                                  # normalized or exact
+export EXTRA_FLAGS="--use-friendly-headers --output-format xlsx"  # Additional options
+
+# Legacy variable names (still supported for backwards compatibility)
+export MESSAGE_COLS="FAILURE MESSAGE 1,FAILURE MESSAGE 2"
+export SUITE_COL="TEST_SUITE"
+export STATUS_COL="EXECUTION RESULT"
+export TOPN=5
+export GROUP_BY=norm
 ```
 
 ### Command Line Arguments
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `--input` | Input CSV file path | Required |
-| `--output-dir` | Output directory | Required |
-| `--message-cols` | Comma-separated message columns | Required |
-| `--suite-col` | Suite grouping column | Required |
-| `--status-col` | Status column name | `"EXECUTION RESULT"` |
-| `--top-n` | Number of top messages per suite | `5` |
-| `--group-by` | Grouping method: `norm` or `raw` | `norm` |
-| `--format` | Output format: `csv`, `xlsx`, `both` | `csv` |
-| `--pretty` | Use human-friendly column names | `false` |
-| `--truncate-len` | Trim long messages to N chars | `0` (disabled) |
-| `--no-colors` | Disable XLSX colors | `false` |
+| `--input-file` | Input CSV file path | Required |
+| `--output-directory` | Output directory | Required |
+| `--error-message-columns` | Comma-separated message columns | Required |
+| `--test-suite-column` | Suite grouping column | `"TEST_SUITE"` |
+| `--test-status-column` | Status column name | `"EXECUTION RESULT"` |
+| `--top-errors-count` | Number of top messages per suite | `5` |
+| `--grouping-method` | Grouping method: `normalized` or `exact` | `normalized` |
+| `--output-format` | Output format: `csv`, `xlsx`, `both` | `csv` |
+| `--use-friendly-headers` | Use human-friendly column names | `false` |
+| `--max-message-length` | Trim long messages to N chars | `0` (disabled) |
+| `--disable-excel-colors` | Disable XLSX colors | `false` |
 
 ## Output Files
 
