@@ -48,29 +48,29 @@ This tool transforms raw test execution data into actionable insights, enabling 
 
 #### Option 1: Using the Bash Wrapper (Recommended)
 
-**Basic usage (CSV and XLSX):**
+**Basic usage (generates both CSV and XLSX):**
 ```bash
 ./suite_summary.sh your_logs.csv
 ```
 - Creates both CSV and XLSX files by default
-- Output folder: `out_name_of_your_file`
+- Output folder: `out_<name_of_your_file>`
 
 **With custom output directory:**
 ```bash
 ./suite_summary.sh your_logs.csv my_output_folder
 ```
 
-**With additional options (CSV and XLSX):**
+**With additional options:**
 ```bash
 EXTRA_FLAGS="--output-format both --use-friendly-headers --top-errors-count 10" ./suite_summary.sh your_logs.csv
 ```
 
-**For only XLSX:**
+**For XLSX only:**
 ```bash
 EXTRA_FLAGS="--output-format xlsx --use-friendly-headers" ./suite_summary.sh your_logs.csv
 ```
 
-**For only CSV:**
+**For CSV only:**
 ```bash
 EXTRA_FLAGS="--output-format csv" ./suite_summary.sh your_logs.csv
 ```
@@ -90,7 +90,7 @@ python suite_error_summary.py \
 
 ## Input Requirements
 
-Your CSV file must contain:
+Your CSV file must contain the following columns:
 
 - **Suite column**: Groups tests by test suite (e.g., `TEST_SUITE`)
 - **Status column**: Test execution status (e.g., `EXECUTION RESULT`)
@@ -98,20 +98,24 @@ Your CSV file must contain:
 
 **Supported status values**: `FAILED`, `UNSTABLE`
 
+**Note**: Tests with other statuses (e.g., `PASSED`, `SKIPPED`) will be filtered out during analysis.
+
 ## Configuration Options
 
 ### Environment Variables (for bash wrapper)
 
+**New user-friendly variable names (recommended):**
 ```bash
-# New user-friendly variable names (recommended)
 export ERROR_MESSAGE_COLUMNS="FAILURE MESSAGE 1,FAILURE MESSAGE 2"  # Message columns to analyze
 export TEST_SUITE_COLUMN="TEST_SUITE"                              # Suite grouping column
 export TEST_STATUS_COLUMN="EXECUTION RESULT"                       # Status column
 export TOP_ERRORS_COUNT=5                                          # Number of top messages per suite
 export GROUPING_METHOD=normalized                                  # normalized or exact
 export EXTRA_FLAGS="--use-friendly-headers --output-format xlsx"  # Additional options
+```
 
-# Legacy variable names (still supported for backwards compatibility)
+**Legacy variable names (still supported for backwards compatibility):**
+```bash
 export MESSAGE_COLS="FAILURE MESSAGE 1,FAILURE MESSAGE 2"
 export SUITE_COL="TEST_SUITE"
 export STATUS_COL="EXECUTION RESULT"
@@ -135,17 +139,33 @@ export GROUP_BY=norm
 | `--max-message-length` | Trim long messages to N chars | `0` (disabled) |
 | `--disable-excel-colors` | Disable XLSX colors | `false` |
 
+### Backwards Compatibility
+
+**Environment Variables**: The wrapper script supports legacy environment variable names:
+
+| Legacy Variable | New Variable |
+|-----------------|--------------|
+| `MESSAGE_COLS` | `ERROR_MESSAGE_COLUMNS` |
+| `SUITE_COL` | `TEST_SUITE_COLUMN` |
+| `STATUS_COL` | `TEST_STATUS_COLUMN` |
+| `TOPN` | `TOP_ERRORS_COUNT` |
+| `GROUP_BY` | `GROUPING_METHOD` |
+| `SEP` | `CSV_SEPARATOR` |
+| `ENCODING` | `FILE_ENCODING` |
+
+**Command Line Parameters**: Legacy parameter names (e.g., `--top-n`, `--pretty`, `--format`) are also supported for backwards compatibility.
+
 ## Output Files
 
-The tool generates:
+The tool generates the following output files:
 
-- **CSV**: `suite_error_summary.csv` - Raw data format
-- **XLSX**: `suite_error_summary.xlsx` - Formatted spreadsheet with:
-  - Multi-level headers
-  - Frozen panes and filters
-  - Proper column widths
-  - Conditional formatting (unless `--no-colors`)
-- **Log**: `run.log` - Execution log
+- **CSV Report**: `suite_error_summary.csv` - Raw data format for further processing
+- **Excel Report**: `suite_error_summary.xlsx` - Formatted spreadsheet with:
+  - Multi-level headers for better readability
+  - Frozen panes and autofilters for navigation
+  - Optimized column widths
+  - Conditional formatting (unless `--disable-excel-colors`)
+- **Execution Log**: `run.log` - Detailed execution log with processing statistics
 
 ### Example Results
 
@@ -164,14 +184,15 @@ The tool generates:
 
 ### Advanced Configuration
 ```bash
-# Top 10 messages, both formats, pretty headers
-EXTRA_FLAGS="--top-n 10 --format both --pretty" ./suite_summary.sh test_results.csv analysis_output
+# Top 10 messages, both formats, friendly headers
+EXTRA_FLAGS="--top-errors-count 10 --output-format both --use-friendly-headers" ./suite_summary.sh test_results.csv analysis_output
 ```
 
-### Performance Notes
-- **Optimized for Large Datasets**: Recent performance improvements reduce DataFrame access operations by ~85%
-- **Memory Efficient**: Helper functions minimize code duplication and memory usage
-- **Fast Processing**: Consolidated CSV writing and optimized data access patterns
+### Performance Highlights
+- **Optimized for Large Datasets**: Performance improvements reduce DataFrame access operations by ~85%
+- **Memory Efficient**: Optimized multi-format output logic eliminates redundant object creation
+- **Fast Processing**: Consolidated CSV writing and streamlined data access patterns
+- **Scalable**: Efficiently handles datasets with thousands of test results
 
 ## Troubleshooting
 
@@ -192,20 +213,20 @@ chmod +x suite_summary.sh
 ### Large Files
 For very large CSV files, consider:
 - Increase system memory
-- Use `--format csv` only (faster than XLSX)
+- Use `--output-format csv` only (faster than XLSX)
 - Filter data beforehand
 
 ## File Structure
 
 ```
 .
-├── suite_summary.sh            # Bash wrapper script (optimized flags)
-├── suite_error_summary.py      # Main Python analysis tool (performance optimized)
+├── suite_summary.sh            # Bash wrapper script (user-friendly defaults)
+├── suite_error_summary.py      # Main Python analysis tool (optimized & enhanced)
 ├── requirements.txt            # Python dependencies
 ├── logs.csv                    # Example input data
 ├── out_logs/                   # Example output directory
 │   ├── suite_error_summary.csv # Generated CSV report
-│   ├── suite_error_summary.xlsx# Generated Excel report
+│   ├── suite_error_summary.xlsx# Generated Excel report (formatted)
 │   └── run.log                 # Execution log
 └── README.md                   # This file
 ```
