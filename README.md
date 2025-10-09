@@ -62,12 +62,12 @@ This tool transforms raw test execution data into actionable insights, enabling 
 
 **With additional options:**
 ```bash
-EXTRA_FLAGS="--output-format both --use-friendly-headers --top-errors-count 10" ./suite_summary.sh your_logs.csv
+EXTRA_FLAGS="--output-format both --top-errors-count 10" ./suite_summary.sh your_logs.csv
 ```
 
 **For XLSX only:**
 ```bash
-EXTRA_FLAGS="--output-format xlsx --use-friendly-headers" ./suite_summary.sh your_logs.csv
+EXTRA_FLAGS="--output-format xlsx" ./suite_summary.sh your_logs.csv
 ```
 
 **For CSV only:**
@@ -84,7 +84,6 @@ python suite_error_summary.py \
   --error-message-columns "FAILURE MESSAGE 1,FAILURE MESSAGE 2" \
   --test-suite-column TEST_SUITE \
   --test-status-column "EXECUTION RESULT" \
-  --use-friendly-headers \
   --output-format xlsx
 ```
 
@@ -108,10 +107,9 @@ Your CSV file must contain the following columns:
 ```bash
 export ERROR_MESSAGE_COLUMNS="FAILURE MESSAGE 1,FAILURE MESSAGE 2"  # Message columns to analyze
 export TEST_SUITE_COLUMN="TEST_SUITE"                              # Suite grouping column
-export TEST_STATUS_COLUMN="EXECUTION RESULT"                       # Status column
-export TOP_ERRORS_COUNT=5                                          # Number of top messages per suite
-export GROUPING_METHOD=normalized                                  # normalized or exact
-export EXTRA_FLAGS="--use-friendly-headers --output-format xlsx"  # Additional options
+export TEST_STATUS_COLUMN="EXECUTION RESULT"             # Status column
+export TOP_ERRORS_COUNT=5                                # Number of top messages per suite
+export EXTRA_FLAGS="--output-format xlsx"                # Additional options
 ```
 
 **Legacy variable names (still supported for backwards compatibility):**
@@ -120,7 +118,6 @@ export MESSAGE_COLS="FAILURE MESSAGE 1,FAILURE MESSAGE 2"
 export SUITE_COL="TEST_SUITE"
 export STATUS_COL="EXECUTION RESULT"
 export TOPN=5
-export GROUP_BY=norm
 ```
 
 ### Command Line Arguments
@@ -133,11 +130,7 @@ export GROUP_BY=norm
 | `--test-suite-column` | Suite grouping column | `"TEST_SUITE"` |
 | `--test-status-column` | Status column name | `"EXECUTION RESULT"` |
 | `--top-errors-count` | Number of top messages per suite | `5` |
-| `--grouping-method` | Grouping method: `normalized` or `exact` | `normalized` |
-| `--output-format` | Output format: `csv`, `xlsx`, `both` | `csv` |
-| `--use-friendly-headers` | Use human-friendly column names | `false` |
-| `--max-message-length` | Trim long messages to N chars | `0` (disabled) |
-| `--disable-excel-colors` | Disable XLSX colors | `false` |
+| `--output-format` | Output format: `csv`, `xlsx`, `both` | `both` |
 
 ### Backwards Compatibility
 
@@ -149,11 +142,6 @@ export GROUP_BY=norm
 | `SUITE_COL` | `TEST_SUITE_COLUMN` |
 | `STATUS_COL` | `TEST_STATUS_COLUMN` |
 | `TOPN` | `TOP_ERRORS_COUNT` |
-| `GROUP_BY` | `GROUPING_METHOD` |
-| `SEP` | `CSV_SEPARATOR` |
-| `ENCODING` | `FILE_ENCODING` |
-
-**Command Line Parameters**: Legacy parameter names (e.g., `--top-n`, `--pretty`, `--format`) are also supported for backwards compatibility.
 
 ## Output Files
 

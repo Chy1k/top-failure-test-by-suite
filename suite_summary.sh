@@ -2,25 +2,19 @@
 set -Eeuo pipefail
 
 # Defaults (override by env if needed)
-# New user-friendly variable names (preferred)
+# Simplified configuration - core options only
 ERROR_MESSAGE_COLUMNS=${ERROR_MESSAGE_COLUMNS:-"FAILURE MESSAGE 1,FAILURE MESSAGE 2"}
 TEST_SUITE_COLUMN=${TEST_SUITE_COLUMN:-"TEST_SUITE"}
 TEST_STATUS_COLUMN=${TEST_STATUS_COLUMN:-"EXECUTION RESULT"}
 TOP_ERRORS_COUNT=${TOP_ERRORS_COUNT:-5}
-GROUPING_METHOD=${GROUPING_METHOD:-normalized}
-CSV_SEPARATOR=${CSV_SEPARATOR:-","}
-FILE_ENCODING=${FILE_ENCODING:-"utf-8"}
 
 # Backwards compatibility with legacy variable names
 ERROR_MESSAGE_COLUMNS=${MESSAGE_COLS:-$ERROR_MESSAGE_COLUMNS}
 TEST_SUITE_COLUMN=${SUITE_COL:-$TEST_SUITE_COLUMN}
 TEST_STATUS_COLUMN=${STATUS_COL:-$TEST_STATUS_COLUMN}
 TOP_ERRORS_COUNT=${TOPN:-$TOP_ERRORS_COUNT}
-GROUPING_METHOD=${GROUP_BY:-$GROUPING_METHOD}
-CSV_SEPARATOR=${SEP:-$CSV_SEPARATOR}
-FILE_ENCODING=${ENCODING:-$FILE_ENCODING}
 
-EXTRA_FLAGS=${EXTRA_FLAGS:-"--output-format both --use-friendly-headers --disable-excel-colors"}
+EXTRA_FLAGS=${EXTRA_FLAGS:-"--output-format both"}
 
 usage(){ echo "Usage: $0 <logs.csv> [out_dir]"; exit 1; }
 [[ $# -lt 1 ]] && usage
@@ -54,15 +48,12 @@ case "$OSTYPE" in msys*|cygwin*) command -v cygpath >/dev/null 2>&1 && {
 mkdir -p "$OUT"
 RUNLOG="$OUT/run.log"
 
-# Build command with smart defaults
+# Build command with simplified defaults
 CMD_ARGS=(
   --input-file "$CSV_ARG"
   --output-directory "$OUT_ARG"
   --error-message-columns "$ERROR_MESSAGE_COLUMNS"
-  --grouping-method "$GROUPING_METHOD"
   --top-errors-count "$TOP_ERRORS_COUNT"
-  --csv-separator "$CSV_SEPARATOR"
-  --file-encoding "$FILE_ENCODING"
 )
 
 # Only add suite/status columns if they differ from defaults

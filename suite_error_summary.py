@@ -79,11 +79,10 @@ def parse_args() -> argparse.Namespace:
 
     Key args:
     - --error-message-columns: comma-separated columns to scan for error messages.
-    - --grouping-method: 'normalized' (default) groups by normalized message; 'exact' uses exact text.
-    - --use-friendly-headers/--output-format: presentation-oriented exports (CSV/XLSX).
+    - --output-format: 'csv', 'xlsx', or 'both' (default) for output format.
     - --top-errors-count: number of top error messages per suite.
 
-    "Make the CLI match the mental model: input → transform → top-N → export."
+    "Simplified CLI: input → transform → top-N → export."
     """
     parser = argparse.ArgumentParser(
         description="Suite-level error summary (Top-N with FAILED/UNSTABLE breakdown)"
@@ -98,23 +97,10 @@ def parse_args() -> argparse.Namespace:
                        help='Column name for test suite grouping (default: TEST_SUITE)')
     parser.add_argument("--test-status-column", default="EXECUTION RESULT",
                        help='Column name for test execution status (default: EXECUTION RESULT)')
-    parser.add_argument("--grouping-method", choices=["normalized", "norm", "exact"], default="normalized",
-                       help="How to group error messages: 'normalized' (smart grouping, default) or 'exact' (exact match)")
-    parser.add_argument("--csv-separator", default=",",
-                       help="CSV field separator character (default: comma)")
-    parser.add_argument("--file-encoding", default=None,
-                       help="Text encoding of the input file (default: auto-detect)")
     parser.add_argument("--top-errors-count", type=int, default=DEFAULT_TOP_N,
                        help=f"Number of top error messages to show per suite (default: {DEFAULT_TOP_N})")
-    # presentation
-    parser.add_argument("--use-friendly-headers", action="store_true",
-                       help="Use descriptive, human-friendly column names in output")
-    parser.add_argument("--max-message-length", type=int, default=0,
-                       help="Truncate long error messages to N characters (0 = no limit)")
-    parser.add_argument("--output-format", choices=["csv","xlsx","both"], default="csv",
-                       help="Output file format: CSV, Excel, or both")
-    parser.add_argument("--disable-excel-colors", action="store_true",
-                       help="Disable background colors in Excel output for better compatibility")
+    parser.add_argument("--output-format", choices=["csv","xlsx","both"], default="both",
+                       help="Output file format: CSV, Excel, or both (default: both)")
     return parser.parse_args()
 
 
@@ -156,11 +142,11 @@ def write_output(df: pd.DataFrame, path: Path, args: argparse.Namespace) -> None
             border = {"border": 1}
             fmt_group = wb.add_format({
                 "bold": True, "align": "center", "valign": "vcenter", **border,
-                **({} if args.disable_excel_colors else {"bg_color": "#D9E1F2"})
+                "bg_color": "#D9E1F2"
             })
             fmt_head = wb.add_format({
                 "bold": True, "align": "center", "valign": "vcenter", "text_wrap": True, **border,
-                **({} if args.disable_excel_colors else {"bg_color": "#F2F2F2"})
+                "bg_color": "#F2F2F2"
             })
             fmt_text = wb.add_format({"text_wrap": True, "valign": "top"})
             fmt_num  = wb.add_format({"num_format": "#,##0", "align": "center"})
@@ -255,8 +241,7 @@ def main() -> None:
 
     # Robust read with error handling
     try:
-        df = pd.read_csv(args.input_file, header=0, low_memory=False, on_bad_lines="skip",
-                         sep=args.csv_separator, encoding=args.file_encoding)
+        df = pd.read_csv(args.input_file, header=0, low_memory=False, on_bad_lines="skip")
     except FileNotFoundError:
         raise SystemExit(f"Input file not found: {args.input_file}")
     except pd.errors.EmptyDataError:
@@ -327,9 +312,8 @@ def main() -> None:
 
     # ---------------- Build signatures ----------------
     # Option 1: normalized key (default) → robust grouping
-    # Option 2: raw message → exact grouping
-    key = long["message_raw"].map(normalize) if args.grouping_method in ("normalized", "norm") \
-          else long["message_raw"].str.strip()
+    # Use normalized grouping (smart grouping by default)
+    key = long["message_raw"].map(normalize)
 
     long["signature"] = key
 
@@ -382,11 +366,8 @@ def main() -> None:
             if i <= len(suite_messages):
                 # Get the current message row once to avoid repeated iloc calls
                 current_msg = suite_messages.iloc[i - 1]
+                # Store the error message as-is (no truncation)
                 msg = current_msg["example_message"]
-
-                # Optional readability: trim very long exemplars.
-                if args.max_message_length and isinstance(msg, str) and len(msg) > args.max_message_length:
-                    msg = msg[:args.max_message_length - 1] + "..."
 
                 row[f"top{i}_message"]        = msg
                 row[f"top{i}_events"]         = current_msg["events"]
@@ -430,42 +411,36 @@ def main() -> None:
             results_df[col] = "" if "message" in col else 0
     results_df = results_df[ordered_columns]
 
-    # Pretty mode: rename columns with more descriptive names
-    if args.use_friendly_headers:
-        column_renames = {
-            args.test_suite_column: "Test Suite Name",
-            "other_events": "Other Error Occurrences",
-            "other_failed_tests": "Other Failed Tests",
-            "other_unstable_tests": "Other Unstable Tests",
-        }
-        for i in range(1, args.top_errors_count + 1):
-            column_renames.update({
-                f"top{i}_message":        f"Top {i} Error Message",
-                f"top{i}_events":         f"Top {i} Occurrences",
-                f"top{i}_failed_tests":   f"Top {i} Failed Count",
-                f"top{i}_unstable_tests": f"Top {i} Unstable Count",
-            })
-        results_df = results_df.rename(columns=column_renames)
+    # Use friendly column names (always enabled for better readability)
+    column_renames = {
+        args.test_suite_column: "Test Suite Name",
+        "other_events": "Other Error Occurrences",
+        "other_failed_tests": "Other Failed Tests",
+        "other_unstable_tests": "Other Unstable Tests",
+    }
+    for i in range(1, args.top_errors_count + 1):
+        column_renames.update({
+            f"top{i}_message":        f"Top {i} Error Message",
+            f"top{i}_events":         f"Top {i} Occurrences",
+            f"top{i}_failed_tests":   f"Top {i} Failed Count",
+            f"top{i}_unstable_tests": f"Top {i} Unstable Count",
+        })
+    results_df = results_df.rename(columns=column_renames)
 
-        # Write output (support csv/xlsx/both).
-        if args.output_format in ("csv", "both"):
-            # Temporarily change format for CSV output
-            original_format = args.output_format
-            args.output_format = "csv"
-            write_output(results_df, output_dir / "suite_error_summary.csv", args)
-            args.output_format = original_format
+    # Write output (support csv/xlsx/both).
+    if args.output_format in ("csv", "both"):
+        # Temporarily change format for CSV output
+        original_format = args.output_format
+        args.output_format = "csv"
+        write_output(results_df, output_dir / "suite_error_summary.csv", args)
+        args.output_format = original_format
 
-        if args.output_format in ("xlsx", "both"):
-            # Temporarily change format for XLSX output
-            original_format = args.output_format
-            args.output_format = "xlsx"
-            write_output(results_df, output_dir / "suite_error_summary.xlsx", args)
-            args.output_format = original_format
-
-        return
-
-    # Non-pretty path: single write using the requested format.
-    write_output(results_df, output_dir / out_name(args.output_format), args)
+    if args.output_format in ("xlsx", "both"):
+        # Temporarily change format for XLSX output
+        original_format = args.output_format
+        args.output_format = "xlsx"
+        write_output(results_df, output_dir / "suite_error_summary.xlsx", args)
+        args.output_format = original_format
 
 
 if __name__ == "__main__":
